@@ -292,7 +292,7 @@ class MultiChzzkRecorder:
 
                         except FileNotFoundError:
                             logger.error(f"File not found!")
-                            self.send_message('Critical Error', f"Recorded file of `{self.record_dict[channel_id]['channelName']} ({channel_id})` was not found!\n"
+                            self.send_message("Recording couldn't start", f"Recorded file of `{self.record_dict[channel_id]['channelName']} ({channel_id})` was not found!\n"
                                                                 f"Possible issue of streamlink. Check log for details.")
 
                         message_sent = True
