@@ -42,6 +42,13 @@ class MultiChzzkRecorder:
     def __init__(self, quality: str, cfg: dict) -> None:
         logger.info("Initializing Multi Chzzk Recorder...")
 
+        ret = subprocess.check_output(["streamlink", "--plugins"], universal_newlines=True)
+        installed_plugins = ret.split(': ')[-1].split(', ')
+
+        if 'chzzk' not in installed_plugins:
+            logger.error("Streamlink plugin for chzzk is not installed. Exiting...")
+            sys.exit(1)
+
         self.cfg = cfg
 
         self.ffmpeg_path = "ffmpeg"
