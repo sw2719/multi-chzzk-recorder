@@ -92,13 +92,13 @@ class MultiChzzkRecorder:
 
         streamers_list_str = '`\n`'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
 
-        self.send_message("Chzzk Recorder initialized",
-                          f"Checking/recording {len(self.record_dict)} streamer(s):\n"
+        self.send_message("치지직 레코더 시작됨",
+                          f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
                           f"{streamers_list_str}\n\n"
-                          f"Recording quality: ```{self.quality}```\n"
-                          f"Recording save directory: ```{self.root_path}```\n"
-                          f"Check interval: ```{self.refresh} seconds```\n"
-                          f"Use fallback dir: ```{self.cfg['fallback_to_current_dir']}```\n")
+                          f"녹화 품질: ```{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}```\n"
+                          f"저장 디렉토리: ```{self.root_path}```\n"
+                          f"확인 주기: ```{self.refresh}초```\n"
+                          f"fallback 디렉토리 사용: ```{'예' if self.cfg['fallback_to_current_dir'] else '아니오'}```\n")
 
         self.poll_thread = threading.Thread(target=self.poll_command)
         self.poll_thread.start()
@@ -182,9 +182,9 @@ class MultiChzzkRecorder:
                 logger.info(f'Got command: {data}')
 
                 if data['type'] == 'add':
-                    self.add_streamer(data['username'])
+                    self.add_streamer(data['channel_id'])
                 elif data['type'] == 'remove':
-                    self.remove_streamer(data['username'])
+                    self.remove_streamer(data['channel_id'])
                 elif data['type'] == 'list':
                     self.send_list()
 
@@ -196,8 +196,8 @@ class MultiChzzkRecorder:
         streamers_list_str = '`\n`'.join(
             [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id]['recorder'] is not None
              else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
-        self.send_message("Record list",
-                          f"Checking/recording {len(self.record_list)} streamer(s):\n"
+        self.send_message("녹화 채널 목록",
+                          f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
                           f"{streamers_list_str}", socket=self.command_socket)
 
     def save_record_dict(self):
@@ -206,10 +206,10 @@ class MultiChzzkRecorder:
 
     def add_streamer(self, channel_id: str):
         if channel_id in self.record_dict:
-            self.send_message('Add failed', f"Channel ID `{channel_id}` is already added.", socket=self.command_socket)
+            self.send_message('추가 실패', f"채널 ID `{channel_id}` 는 이미 추가되어 있습니다.", socket=self.command_socket)
             return
         elif not (channel_data := get_channel_info(channel_id)):
-            self.send_message('Add failed', f"Channel ID `{channel_id}` is not a valid chzzk channel.", socket=self.command_socket)
+            self.send_message('추가 실패', f"채널 ID `{channel_id}`는 올바른 치지직 채널이 아닙니다.", socket=self.command_socket)
             return
 
         while True:
@@ -230,14 +230,14 @@ class MultiChzzkRecorder:
 
         self.save_record_dict()
 
-        self.send_message("Add success", f"Added `{username} ({channel_id})` to record list.", socket=self.command_socket)
+        self.send_message("채널 추가됨", f"채널 `{username} ({channel_id})`을/를 녹화 목록에 추가했습니다.", socket=self.command_socket)
 
         logger.info(f'Added {channel_id} to record dict')
 
     def remove_streamer(self, channel_id: str):
         if channel_id not in self.record_dict:
-            self.send_message('Remove failed', f"Channel ID `{channel_id}` is not added.\n"
-                              f"Use ',list' command to see added channel IDs.", socket=self.command_socket)
+            self.send_message('제거 실패', f"채널 ID `{channel_id}`는 추가된 채널이 아닙니다.\n"
+                              f"',list' 명령어로 추가된 채널 ID를 확인하세요.", socket=self.command_socket)
             return
 
         while True:
@@ -253,7 +253,7 @@ class MultiChzzkRecorder:
 
         self.save_record_dict()
 
-        self.send_message("Remove success", f"Removed `{removed_channel_data['channelName']} ({channel_id})` from record list.", socket=self.command_socket)
+        self.send_message("제거 성공", f"채널 `{removed_channel_data['channelName']} ({channel_id})`을/를 녹화 목록에서 제거했습니다.", socket=self.command_socket)
 
         logger.info(f'Removed {channel_id} from record dict')
 
@@ -285,15 +285,16 @@ class MultiChzzkRecorder:
                             else:  # Less than 1KB
                                 readable_size = f"{file_size} Bytes"
 
-                            self.send_message('Recording done',
-                                              f'Recording of `{self.record_dict[channel_id]["channelName"]}` has been stopped.\n\n'
-                                              f"File path: ```{self.recorder_processes[channel_id]['path']}```\n"
-                                              f"File size: {readable_size}")
+                            self.send_message('녹화 종료',
+                                              f'채널 `{self.record_dict[channel_id]["channelName"]}`의 녹화가 끝났습니다.\n\n'
+                                              f"파일 경로: ```{self.recorder_processes[channel_id]['path']}```\n"
+                                              f"파일 크기: {readable_size}")
 
                         except FileNotFoundError:
-                            logger.error(f"File not found!")
-                            self.send_message("Recording couldn't start", f"Recorded file of `{self.record_dict[channel_id]['channelName']} ({channel_id})` was not found!\n"
-                                                                f"Possible issue of streamlink. Check log for details.")
+                            logger.error(f"Recorded file of {channel_id} not found!")
+                            self.send_message("녹화 파일 찾을 수 없음",
+                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화 파일을 찾을 수 없습니다.\n"
+                                              f"streamlink의 문제일 수 있습니다. 로그를 확인하세요.")
 
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
@@ -330,13 +331,13 @@ class MultiChzzkRecorder:
                                 os.mkdir(os.path.join('fallback_recordings', username))
 
                             file_dir = os.path.join(os.getcwd(), 'fallback_recordings', username)
-                            self.send_message('Warning',
-                                              f'Recording stream to fallback directory for `{username}`.\n'
-                                              'Please check if default save directory is online or mounted correctly.')
+                            self.send_message('경고',
+                                              f'`{username}`의 녹화를 fallback 디렉토리에 저장합니다..\n'
+                                              '설정된 녹화 저장 디렉토리가 접근 가능한지 확인하세요.')
                         else:
-                            self.send_message('Error',
-                                              f"Recording couldn't start because save directory is inaccessible!\n"
-                                              'Please check if default save directory is online or mounted correctly.')
+                            self.send_message('오류',
+                                              f"저장 디렉토리가 접근 불가능하므로 녹화를 시작할 수 없습니다.\n"
+                                              '저장 디렉토리가 온라인이고 마운트됐는지 확인하세요.')
                             continue
                     else:
                         file_dir = os.path.join(self.root_path, username)
@@ -367,12 +368,12 @@ class MultiChzzkRecorder:
                     self.recorder_processes[username]['path'] = rec_file_path
 
                     self.recording_count += 1
-                    self.send_message('Recording started',
-                                      f'Started recording `{username}`.\n\n'
-                                      f'Title```{stream_data["liveTitle"]}```\n'
-                                      f'Stream started at```{_data["stream_started_msg"]}```\n'
-                                      f'Recording started at```{now.strftime(self.cfg["msg_time_format"])}```\n'
-                                      f'File path```{rec_file_path}```')
+                    self.send_message('녹화 시작',
+                                      f'`{username}`의 녹화를 시작합니다.\n\n'
+                                      f'제목```{stream_data["liveTitle"]}```\n'
+                                      f'방송 시작```{_data["stream_started_msg"]}```\n'
+                                      f'녹화 시작```{now.strftime(self.cfg["msg_time_format"])}```\n'
+                                      f'파일 경로```{rec_file_path}```')
                     message_sent = True
 
                 else:
