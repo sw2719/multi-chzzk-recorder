@@ -65,9 +65,9 @@ class DiscordBot(commands.Bot):
             except zmq.ZMQError:
                 if no_data_counter > THRESHOLD and not no_data_sent:
                     await self.send_message(ds.Embed(
-                        title='No data received',
-                        description=f'No data received for more than {THRESHOLD} seconds.\n'
-                                    f'Check if there is any issue.'))
+                        title='레코더가 응답하지 않음',
+                        description=f'{THRESHOLD}초 이상 동안 레코더로부터 응답이 없습니다.\n'
+                                    f'문제가 있는지 확인이 필요합니다.'))
 
                     no_data_sent = True
 
@@ -77,36 +77,41 @@ class DiscordBot(commands.Bot):
     def add_commands(self):
         # Work in progress
         @self.command()
-        async def add(ctx, username: str = ''):
-            username = username.strip()
+        async def add(ctx, user_input: str = ''):
+            user_input = user_input.strip()
+
+            if user_input.startswith('https://chzzk.naver.com/'):
+                channel_id = user_input.split('/')[-1]
+            else:
+                channel_id = user_input
 
             if self.command_busy:
-                await ctx.send('Another command is running.')
+                await ctx.send('다른 명령이 이미 실행 중입니다.')
                 return
-            elif not username:
-                await ctx.send('Please provide a Twitch username.')
+            elif not user_input:
+                await ctx.send('치지직 채널 링크 또는 채널 ID를 입력해야 합니다.')
                 return
 
             self.command_socket.send_json({'type': 'add',
-                                           'username': username})
+                                           'channel_id': user_input})
 
             await self.send_result_after_command(ctx)
 
         @self.command()
-        async def remove(ctx, username: str = ''):
-            username = username.strip()
+        async def remove(ctx, channel_id: str = ''):
+            channel_id = channel_id.strip()
 
             if self.command_busy:
-                await ctx.send('Another command is running.')
+                await ctx.send('다른 명령이 이미 실행 중입니다.')
                 return
-            elif not username:
-                await ctx.send('Please provide a Twitch username.')
+            elif not channel_id:
+                await ctx.send('P치지직 채널 ID를 입력해야 합니다.')
                 return
 
             self.command_busy = True
 
             self.command_socket.send_json({'type': 'remove',
-                                           'username': username})
+                                           'channel_id': channel_id})
 
             await self.send_result_after_command(ctx)
 
@@ -115,7 +120,7 @@ class DiscordBot(commands.Bot):
         @self.command(name='list')
         async def list_(ctx):
             if self.command_busy:
-                await ctx.send('Another command is running.')
+                await ctx.send('다른 명령이 이미 실행 중입니다.')
                 return
 
             self.command_busy = True
