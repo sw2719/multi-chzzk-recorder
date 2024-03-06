@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-
-# Only works for Streamlink version >= 4.2.0
-
 import datetime
 import json
 import logging
