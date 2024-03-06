@@ -447,7 +447,6 @@ def main():
                 'msg_time_format': '%y-%m-%d %H:%M:%S',
                 'recording_save_root_dir': '',
                 'fallback_to_current_dir': True,
-                'request_retry_time': 15,
                 'interval': 10,
                 'use_discord_bot': False,
                 'zmq_port': 5555,
