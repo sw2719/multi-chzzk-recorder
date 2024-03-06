@@ -14,6 +14,7 @@ import time
 import threading
 import traceback
 import shlex
+import atexit
 from typing import Dict, Any
 
 import requests
@@ -50,6 +51,7 @@ class MultiChzzkRecorder:
             sys.exit(1)
 
         self.cfg = cfg
+        self.discord_process = None
 
         self.ffmpeg_path = "ffmpeg"
         self.refresh = self.cfg["interval"]
@@ -97,6 +99,9 @@ class MultiChzzkRecorder:
             self.socket, self.command_socket = self.init_discord_bot()
             logger.info('Got socket')
 
+            self.poll_thread = threading.Thread(target=self.poll_command, daemon=True)
+            self.poll_thread.start()
+
         streamers_list_str = '`\n`'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
 
         self.send_embed({
@@ -109,9 +114,6 @@ class MultiChzzkRecorder:
                 {"name": "fallback 디렉토리 사용", "value": '예' if self.cfg['fallback_to_current_dir'] else '아니오', "inline": False}
             ]
         })
-
-        self.poll_thread = threading.Thread(target=self.poll_command)
-        self.poll_thread.start()
 
         self.loop_running = False
         self.loop()
@@ -126,11 +128,11 @@ class MultiChzzkRecorder:
         zmq_port = self.cfg['zmq_port']
 
         logger.info('Starting discord bot..')
-        discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
-                                            "-t", token,
-                                            "-u", target_user_id,
-                                            "-p", str(zmq_port),
-                                            "-i", str(self.cfg['interval'])])
+        self.discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
+                                                "-t", token,
+                                                "-u", target_user_id,
+                                                "-p", str(zmq_port),
+                                                "-i", str(self.cfg['interval'])])
 
         logger.info("Connecting to discord bot...")
 
@@ -144,7 +146,7 @@ class MultiChzzkRecorder:
 
         while True:
             try:
-                exit_code = discord_process.poll()
+                exit_code = self.discord_process.poll()
 
                 if exit_code is not None:
                     logger.error(f"Discord bot exited with code {exit_code}. Exiting...")
@@ -427,6 +429,16 @@ class MultiChzzkRecorder:
 
             self.loop_running = False
             time.sleep(self.refresh)
+
+    @atexit.register
+    def cleanup(self):
+        logger.info("Cleaning up...")
+
+        if self.discord_process:
+            self.discord_process.terminate()
+            self.discord_process.wait()
+
+        logger.info("Exiting...")
 
 
 def main():
