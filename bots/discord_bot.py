@@ -47,20 +47,28 @@ class DiscordBot(commands.Bot):
                     no_data_counter = 0
                     no_data_sent = False
                     continue
+                else:
+                    if data['type'] == 'message':
+                        title = data['title']
+                        message = data['message']
+                        embed = ds.Embed(title=title, description=message)
+                    elif data['type'] == 'embed':
+                        if 'color' not in data['contents']:
+                            data['contents']['color'] = 0x73F8AA
+                        embed = ds.Embed.from_dict(data['contents'])
+                    else:
+                        pprint('Invalid data type:', data['type'])
+                        continue
 
-                title = data['title']
-                message = data['message']
-                embed = ds.Embed(title=title, description=message)
+                    while True:
+                        try:
+                            await self.send_message(embed)
+                            break
+                        except ds.HTTPException:
+                            await asyncio.sleep(1)
 
-                while True:
-                    try:
-                        await self.send_message(embed)
-                        break
-                    except ds.HTTPException:
-                        await asyncio.sleep(1)
-
-                no_data_counter = 0
-                no_data_sent = False
+                    no_data_counter = 0
+                    no_data_sent = False
 
             except zmq.ZMQError:
                 if no_data_counter > THRESHOLD and not no_data_sent:

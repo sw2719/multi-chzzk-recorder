@@ -14,7 +14,7 @@ import time
 import threading
 import traceback
 import shlex
-from typing import List, TypedDict, Union
+from typing import Dict, Any
 
 import requests
 import zmq
@@ -99,13 +99,16 @@ class MultiChzzkRecorder:
 
         streamers_list_str = '`\n`'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
 
-        self.send_message("치지직 레코더 시작됨",
-                          f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
-                          f"{streamers_list_str}\n\n"
-                          f"녹화 품질: ```{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}```\n"
-                          f"저장 디렉토리: ```{self.root_path}```\n"
-                          f"확인 주기: ```{self.refresh}초```\n"
-                          f"fallback 디렉토리 사용: ```{'예' if self.cfg['fallback_to_current_dir'] else '아니오'}```\n")
+        self.send_embed({
+            "title": "치지직 레코더 시작됨",
+            "description": f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
+            "fields": [
+                {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}", "inline": False},
+                {"name": "저장 디렉토리", "value": f"`{self.root_path}`", "inline": False},
+                {"name": "확인 주기", "value": f"{self.refresh}초", "inline": False},
+                {"name": "fallback 디렉토리 사용", "value": '예' if self.cfg['fallback_to_current_dir'] else '아니오', "inline": False}
+            ]
+        })
 
         self.poll_thread = threading.Thread(target=self.poll_command)
         self.poll_thread.start()
@@ -169,6 +172,23 @@ class MultiChzzkRecorder:
                 'type': 'message',
                 'title': title,
                 'message': message
+            })
+
+    def send_embed(self, contents: Dict[str, Any], socket=None) -> None:
+        """Send an embed message to the discord bot.
+        :param contents: Embed contents.
+        Supported keys: title, type, description, url, timestamp, color, fields, thumbnail, image, footer, provider
+
+        :param socket: ZMQ socket to send the message to. If None, the default socket will be used if available."""
+        if socket is None and self.socket:
+            self.socket.send_json({
+                'type': 'embed',
+                'contents': contents
+            })
+        elif socket:
+            socket.send_json({
+                'type': 'embed',
+                'contents': contents
             })
 
     def send_alive(self, socket=None) -> None:
@@ -292,10 +312,15 @@ class MultiChzzkRecorder:
                             else:  # Less than 1KB
                                 readable_size = f"{file_size} Bytes"
 
-                            self.send_message('녹화 종료',
-                                              f'채널 `{self.record_dict[channel_id]["channelName"]}`의 녹화가 끝났습니다.\n\n'
-                                              f"파일 경로: ```{self.recorder_processes[channel_id]['path']}```\n"
-                                              f"파일 크기: {readable_size}")
+                            self.send_embed({
+                                "title": "녹화 종료됨",
+                                "description": f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
+                                "fields": [
+                                    {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
+                                    {"name": "파일 크기", "value": readable_size, "inline": False}
+                                ]
+
+                            })
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
@@ -375,12 +400,18 @@ class MultiChzzkRecorder:
                     self.recorder_processes[username]['path'] = rec_file_path
 
                     self.recording_count += 1
-                    self.send_message('녹화 시작',
-                                      f'`{username}`의 녹화를 시작합니다.\n\n'
-                                      f'제목```{stream_data["liveTitle"]}```\n'
-                                      f'방송 시작```{_data["stream_started_msg"]}```\n'
-                                      f'녹화 시작```{now.strftime(self.cfg["msg_time_format"])}```\n'
-                                      f'파일 경로```{rec_file_path}```')
+
+                    self.send_embed({
+                        "title": "녹화 시작됨",
+                        "description": f"채널 `{username}`의 녹화를 시작합니다.",
+                        "fields": [
+                            {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
+                            {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
+                            {"name": "녹화 시작", "value": f"`{now.strftime(self.cfg['msg_time_format'])}`", "inline": False},
+                            {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
+                        ]
+
+                    })
                     message_sent = True
 
                 else:
