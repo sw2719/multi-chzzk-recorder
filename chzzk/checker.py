@@ -30,4 +30,4 @@ def check_live(channel_id: str) -> (bool, dict | None):
             return False, None
 
         data = json.loads(r.text)
-        return data['content'] == 'OPEN', data['content']
+        return data['content']['status'] == 'OPEN', data['content']
