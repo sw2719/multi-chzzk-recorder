@@ -16,7 +16,7 @@ from typing import Dict, Any
 import requests
 import zmq
 
-from chzzk.checker import check_live, get_channel_info
+from chzzk.checker import ChzzkChecker
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -65,9 +65,10 @@ class MultiChzzkRecorder:
 
         self.quality = quality
         logger.info(f'Quality set to: {self.quality}')
+        self.chzzk = ChzzkChecker(self.cfg['nid_aut'], self.cfg['nid_ses'])
 
         for channel_id in channel_ids:
-            if channel_data := get_channel_info(channel_id):
+            if channel_data := self.chzzk.get_channel_info(channel_id):
                 self.record_dict[channel_id] = channel_data
                 channel_name = channel_data['channelName']
 
@@ -112,7 +113,6 @@ class MultiChzzkRecorder:
         })
 
         self.loop_running = False
-        self.loop()
 
     def init_discord_bot(self):
         if not self.cfg['discord_bot_token']:
@@ -233,7 +233,7 @@ class MultiChzzkRecorder:
         if channel_id in self.record_dict:
             self.send_message('추가 실패', f"채널 ID `{channel_id}` 는 이미 추가되어 있습니다.", socket=self.command_socket)
             return
-        elif not (channel_data := get_channel_info(channel_id)):
+        elif not (channel_data := self.chzzk.get_channel_info(channel_id)):
             self.send_message('추가 실패', f"채널 ID `{channel_id}`는 올바른 치지직 채널이 아닙니다.", socket=self.command_socket)
             return
 
@@ -332,7 +332,7 @@ class MultiChzzkRecorder:
 
                         self.recording_count -= 1
 
-                is_streaming, stream_data = check_live(channel_id)
+                is_streaming, stream_data = self.chzzk.check_live(channel_id)
                 if is_streaming:
                     logger.info(f"{channel_id} is online. Starting recording...")
                     username = self.record_dict[channel_id]["channelName"]
@@ -426,7 +426,6 @@ class MultiChzzkRecorder:
             self.loop_running = False
             time.sleep(self.refresh)
 
-    @atexit.register
     def cleanup(self):
         logger.info("Cleaning up...")
 
@@ -450,6 +449,8 @@ def main():
         logger.warning('config.json not found!')
         with open('config.json', 'w') as f:
             cfg = {
+                'nid_aut': '',
+                'nid_ses': '',
                 'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
                 'time_format': '%y-%m-%d %H_%M_%S',
                 'msg_time_format': '%y-%m-%d %H:%M:%S',
@@ -479,7 +480,9 @@ def main():
         logger.info("Fallback to current directory is enabled.")
         logger.info("If save directory is offline or unreachable, recordings will be saved to current directory instead.")
 
-    MultiChzzkRecorder(args.quality, cfg)
+    recorder = MultiChzzkRecorder(args.quality, cfg)
+    atexit.register(recorder.cleanup)
+    recorder.loop()
 
 
 if __name__ == "__main__":
