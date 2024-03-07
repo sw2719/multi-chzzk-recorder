@@ -333,7 +333,7 @@ class MultiChzzkRecorder:
                         self.recording_count -= 1
 
                 is_streaming, stream_data = self.chzzk.check_live(channel_id)
-                if is_streaming:
+                if is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
                     logger.info(f"{channel_id} is online. Starting recording...")
                     username = self.record_dict[channel_id]["channelName"]
                     now = datetime.datetime.now()
@@ -341,9 +341,9 @@ class MultiChzzkRecorder:
                         "username": self.record_dict[channel_id]["channelName"],
                         "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
                         "stream_started": datetime.datetime.strptime(
-                            stream_data["openDate"], '%y-%m-%d %H:%M:%S').strftime(self.cfg['time_format']),
+                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['time_format']),
                         "stream_started_msg": datetime.datetime.strptime(
-                            stream_data["openDate"], '%y-%m-%d %H:%M:%S').strftime(self.cfg['msg_time_format']),
+                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['msg_time_format']),
                         "record_started": now.strftime(self.cfg['time_format'])
                     }
                     file_name = self.cfg['file_name_format'].format(**_data)
@@ -387,15 +387,15 @@ class MultiChzzkRecorder:
                     logger.info("Recorded video will be saved at %s", rec_file_path)
 
                     command_string = 'streamlink ' \
-                                  f'https://chzzk.naver.com/{channel_id} ' \
+                                  f'https://chzzk.naver.com/live/{channel_id} ' \
                                   f'{self.quality} ' \
                                   f'-o "{rec_file_path}"'
 
                     command = shlex.split(command_string)
 
                     logger.info("Recorded video will be saved at %s", rec_file_path)
-                    self.recorder_processes[username]['recorder'] = subprocess.Popen(command)
-                    self.recorder_processes[username]['path'] = rec_file_path
+                    self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
+                    self.recorder_processes[channel_id]['path'] = rec_file_path
 
                     self.recording_count += 1
 
