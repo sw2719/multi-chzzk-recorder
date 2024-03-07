@@ -113,7 +113,7 @@ class DiscordBot(commands.Bot):
                 await ctx.send('다른 명령이 이미 실행 중입니다.')
                 return
             elif not channel_id:
-                await ctx.send('P치지직 채널 ID를 입력해야 합니다.')
+                await ctx.send('치지직 채널 ID를 입력해야 합니다.')
                 return
 
             self.command_busy = True
