@@ -413,7 +413,7 @@ class MultiChzzkRecorder:
                     })
                     message_sent = True
 
-                else:
+                elif not is_streaming:
                     logger.info(f"{channel_id} is offline.")
 
             logger.info(f'Check cycle complete. Starting next cycle in {str(self.refresh)} seconds.')
