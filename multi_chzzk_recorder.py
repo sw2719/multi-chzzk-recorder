@@ -68,15 +68,21 @@ class MultiChzzkRecorder:
         self.chzzk = ChzzkChecker(self.cfg['nid_aut'], self.cfg['nid_ses'])
 
         for channel_id in channel_ids:
-            if channel_data := self.chzzk.get_channel_info(channel_id):
-                self.record_dict[channel_id] = channel_data
-                channel_name = channel_data['channelName']
+            while True:
+                channel_data = self.chzzk.get_channel_info(channel_id)
+                if channel_data is not None:
+                    self.record_dict[channel_id] = channel_data
+                    channel_name = channel_data['channelName']
 
-                file_dir = os.path.join(self.root_path, channel_name)
+                    file_dir = os.path.join(self.root_path, channel_name)
 
-                if not os.path.isdir(file_dir):
-                    logger.info(f'Creating directory for {channel_id} ({channel_name})')
-                    os.makedirs(file_dir)
+                    if not os.path.isdir(file_dir):
+                        logger.info(f'Creating directory for {channel_id} ({channel_name})')
+                        os.makedirs(file_dir)
+                    break
+                else:
+                    logger.error(f'Failed to get channel {channel_id}. Retrying in 5 seconds...')
+                    time.sleep(5)
 
         self.recorder_processes = {}
         for channel_id in self.record_dict:
@@ -332,89 +338,95 @@ class MultiChzzkRecorder:
 
                         self.recording_count -= 1
 
-                is_streaming, stream_data = self.chzzk.check_live(channel_id)
-                if is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
-                    logger.info(f"{channel_id} is online. Starting recording...")
+                try:
                     username = self.record_dict[channel_id]["channelName"]
-                    now = datetime.datetime.now()
-                    _data = {
-                        "username": self.record_dict[channel_id]["channelName"],
-                        "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
-                        "stream_started": datetime.datetime.strptime(
-                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['time_format']),
-                        "stream_started_msg": datetime.datetime.strptime(
-                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['msg_time_format']),
-                        "record_started": now.strftime(self.cfg['time_format'])
-                    }
-                    file_name = self.cfg['file_name_format'].format(**_data)
+                    is_streaming, stream_data = self.chzzk.check_live(channel_id)
+                    if is_streaming is None:
+                        self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
+                        message_sent = True
+                    elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
+                        logger.info(f"{channel_id} is online. Starting recording...")
+                        now = datetime.datetime.now()
+                        _data = {
+                            "username": self.record_dict[channel_id]["channelName"],
+                            "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
+                            "stream_started": datetime.datetime.strptime(
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['time_format']),
+                            "stream_started_msg": datetime.datetime.strptime(
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['msg_time_format']),
+                            "record_started": now.strftime(self.cfg['time_format'])
+                        }
+                        file_name = self.cfg['file_name_format'].format(**_data)
 
-                    if not os.path.isdir(self.root_path):
-                        logger.error("Root path does not exist!")
+                        if not os.path.isdir(self.root_path):
+                            logger.error("Root path does not exist!")
 
-                        if self.cfg['fallback_to_current_dir']:
-                            logger.info("Saving to current directory as fallback...")
+                            if self.cfg['fallback_to_current_dir']:
+                                logger.info("Saving to current directory as fallback...")
 
-                            if not os.path.isdir('fallback_recordings'):
-                                os.mkdir('fallback_recordings')
+                                if not os.path.isdir('fallback_recordings'):
+                                    os.mkdir('fallback_recordings')
 
-                            if not os.path.isdir(os.path.join('fallback_recordings', username)):
-                                os.mkdir(os.path.join('fallback_recordings', username))
+                                if not os.path.isdir(os.path.join('fallback_recordings', username)):
+                                    os.mkdir(os.path.join('fallback_recordings', username))
 
-                            file_dir = os.path.join(os.getcwd(), 'fallback_recordings', username)
-                            self.send_message('경고',
-                                              f'`{username}`의 녹화를 fallback 디렉토리에 저장합니다..\n'
-                                              '설정된 녹화 저장 디렉토리가 접근 가능한지 확인하세요.')
+                                file_dir = os.path.join(os.getcwd(), 'fallback_recordings', username)
+                                self.send_message('경고',
+                                                  f'`{username}`의 녹화를 fallback 디렉토리에 저장합니다..\n'
+                                                  '설정된 녹화 저장 디렉토리가 접근 가능한지 확인하세요.')
+                            else:
+                                self.send_message('오류',
+                                                  f"저장 디렉토리가 접근 불가능하므로 녹화를 시작할 수 없습니다.\n"
+                                                  '저장 디렉토리가 온라인이고 마운트됐는지 확인하세요.')
+                                continue
                         else:
-                            self.send_message('오류',
-                                              f"저장 디렉토리가 접근 불가능하므로 녹화를 시작할 수 없습니다.\n"
-                                              '저장 디렉토리가 온라인이고 마운트됐는지 확인하세요.')
-                            continue
-                    else:
-                        file_dir = os.path.join(self.root_path, username)
+                            file_dir = os.path.join(self.root_path, username)
 
-                    rec_file_path = os.path.join(file_dir, file_name)
+                        rec_file_path = os.path.join(file_dir, file_name)
 
-                    uq_num = 0
-                    while os.path.exists(rec_file_path):
-                        logger.warning("File already exists, will add numbers: %s", rec_file_path)
-                        uq_num += 1
-                        file_path_no_ext, file_ext = os.path.splitext(rec_file_path)
-                        if uq_num > 1 and file_path_no_ext.endswith(f" ({uq_num - 1})"):
-                            file_path_no_ext = file_path_no_ext.removesuffix(f" ({uq_num - 1})")
-                        rec_file_path = f"{file_path_no_ext} ({uq_num}){file_ext}"
+                        uq_num = 0
+                        while os.path.exists(rec_file_path):
+                            logger.warning("File already exists, will add numbers: %s", rec_file_path)
+                            uq_num += 1
+                            file_path_no_ext, file_ext = os.path.splitext(rec_file_path)
+                            if uq_num > 1 and file_path_no_ext.endswith(f" ({uq_num - 1})"):
+                                file_path_no_ext = file_path_no_ext.removesuffix(f" ({uq_num - 1})")
+                            rec_file_path = f"{file_path_no_ext} ({uq_num}){file_ext}"
 
-                    # start streamlink process
-                    logger.info("Recorded video will be saved at %s", rec_file_path)
+                        # start streamlink process
+                        logger.info("Recorded video will be saved at %s", rec_file_path)
 
-                    command_string = 'streamlink ' \
-                                  f'https://chzzk.naver.com/live/{channel_id} ' \
-                                  f'{self.quality} ' \
-                                  f'-o "{rec_file_path}"'
+                        command_string = 'streamlink ' \
+                                      f'https://chzzk.naver.com/live/{channel_id} ' \
+                                      f'{self.quality} ' \
+                                      f'-o "{rec_file_path}"'
 
-                    command = shlex.split(command_string)
+                        command = shlex.split(command_string)
 
-                    logger.info("Recorded video will be saved at %s", rec_file_path)
-                    self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
-                    self.recorder_processes[channel_id]['path'] = rec_file_path
+                        logger.info("Recorded video will be saved at %s", rec_file_path)
+                        self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
+                        self.recorder_processes[channel_id]['path'] = rec_file_path
 
-                    self.recording_count += 1
+                        self.recording_count += 1
 
-                    self.send_embed({
-                        "title": "녹화 시작됨",
-                        "description": f"채널 `{username}`의 녹화를 시작합니다.",
-                        "thumbnail": self.record_dict[channel_id]['channelImageUrl'],
-                        "fields": [
-                            {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
-                            {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
-                            {"name": "녹화 시작", "value": f"`{now.strftime(self.cfg['msg_time_format'])}`", "inline": False},
-                            {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
-                        ]
+                        self.send_embed({
+                            "title": "녹화 시작됨",
+                            "description": f"채널 `{username}`의 녹화를 시작합니다.",
+                            "thumbnail": self.record_dict[channel_id]['channelImageUrl'],
+                            "fields": [
+                                {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
+                                {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
+                                {"name": "녹화 시작", "value": f"`{now.strftime(self.cfg['msg_time_format'])}`", "inline": False},
+                                {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
+                            ]
 
-                    })
-                    message_sent = True
+                        })
+                        message_sent = True
 
-                elif not is_streaming:
-                    logger.info(f"{channel_id} is offline.")
+                    elif not is_streaming:
+                        logger.info(f"{channel_id} is offline.")
+                except requests.RequestException:
+                    logger.error(f'Exception while checking {channel_id}')
 
             logger.info(f'Check cycle complete. Starting next cycle in {str(self.refresh)} seconds.')
 
