@@ -319,6 +319,9 @@ class MultiChzzkRecorder:
                             self.send_embed({
                                 "title": "녹화 종료됨",
                                 "description": f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
+                                "thumbnail": {
+                                    "url": self.record_dict[channel_id]['channelImageUrl']
+                                },
                                 "fields": [
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
                                     {"name": "파일 크기", "value": readable_size, "inline": False}
