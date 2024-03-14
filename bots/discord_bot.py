@@ -105,7 +105,7 @@ class DiscordBot(commands.Bot):
                 return
 
             self.command_socket.send_json({'type': 'add',
-                                           'channel_id': user_input})
+                                           'channel_id': channel_id})
 
             await self.send_result_after_command(ctx)
 
