@@ -104,10 +104,12 @@ class DiscordBot(commands.Bot):
                 await ctx.send('치지직 채널 링크 또는 채널 ID를 입력해야 합니다.')
                 return
 
+            self.command_busy = True
             self.command_socket.send_json({'type': 'add',
                                            'channel_id': channel_id})
 
             await self.send_result_after_command(ctx)
+            self.command_busy = False
 
         @self.command()
         async def remove(ctx, channel_id: str = ''):
@@ -174,7 +176,7 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--token", help="Discord bot token", required=True)
     parser.add_argument("-u", "--target", help="Target user ID", required=True)
     parser.add_argument("-p", "--port", help="ZMQ port", required=True)
-    parser.add_argument("-i", "--interval", help="Twitch recorder interval", required=True)
+    parser.add_argument("-i", "--interval", help="Recorder interval", required=True)
     args = parser.parse_args()
     TOKEN = args.token
     TARGET_USER_ID = int(args.target)
