@@ -105,7 +105,7 @@ class MultiChzzkRecorder:
             self.poll_thread = threading.Thread(target=self.poll_command, daemon=True)
             self.poll_thread.start()
 
-        streamers_list_str = '`\n`'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
+        streamers_list_str = '\n'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
 
         self.send_embed({
             "title": "치지직 레코더 시작됨",
@@ -224,7 +224,7 @@ class MultiChzzkRecorder:
             time.sleep(1)
 
     def send_list(self):
-        streamers_list_str = '`\n`'.join(
+        streamers_list_str = '\n'.join(
             [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id]['recorder'] is not None
              else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
         self.send_message("녹화 채널 목록",
