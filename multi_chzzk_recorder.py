@@ -347,7 +347,7 @@ class MultiChzzkRecorder:
                     if is_streaming is None:
                         self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
                         message_sent = True
-                    elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
+                    elif is_streaming and not stream_data['adult'] and self.recorder_processes[channel_id]['recorder'] is None:
                         logger.info(f"{channel_id} is online. Starting recording...")
                         now = datetime.datetime.now()
                         _data = {
