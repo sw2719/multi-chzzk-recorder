@@ -46,14 +46,20 @@ class MultiChzzkRecorder:
             logger.error("Streamlink plugin for chzzk is not installed. Exiting...")
             sys.exit(1)
 
-        self.cfg = cfg
-        self.discord_process = None
-
-        self.ffmpeg_path = "ffmpeg"
-        self.refresh = self.cfg["interval"]
-        self.root_path = self.cfg['recording_save_root_dir']
         self.recording_count = 0
         self.record_dict = {}
+        self.discord_process = None
+
+        self.FFMPEG = "ffmpeg"
+        self.INTERVAL = cfg["interval"]
+        self.ROOT_PATH = cfg['recording_save_root_dir']
+        self.NID_AUT = cfg['nid_aut']
+        self.NID_SES = cfg['nid_ses']
+        self.MNT_CMD = cfg['mount_command']
+        self.FALLBACK = cfg['fallback_to_current_dir']
+        self.FILE_NAME_FORMAT = cfg['file_name_format']
+        self.TIME_FORMAT = cfg['time_format']
+        self.MSG_TIME_FORMAT = cfg['msg_time_format']
 
         try:
             with open('record_list.txt', 'r') as f:
@@ -65,7 +71,7 @@ class MultiChzzkRecorder:
 
         self.quality = quality
         logger.info(f'Quality set to: {self.quality}')
-        self.chzzk = ChzzkChecker(self.cfg['nid_aut'], self.cfg['nid_ses'])
+        self.chzzk = ChzzkChecker(self.NID_AUT, self.NID_SES)
 
         for channel_id in channel_ids:
             while True:
@@ -74,7 +80,7 @@ class MultiChzzkRecorder:
                     self.record_dict[channel_id] = channel_data
                     channel_name = channel_data['channelName']
 
-                    file_dir = os.path.join(self.root_path, channel_name)
+                    file_dir = os.path.join(self.ROOT_PATH, channel_name)
 
                     if not os.path.isdir(file_dir):
                         logger.info(f'Creating directory for {channel_id} ({channel_name})')
@@ -91,15 +97,15 @@ class MultiChzzkRecorder:
                 'path': None
             }
 
-        if self.refresh < 5:
+        if self.INTERVAL < 5:
             logger.warning("Check interval should not be lower than 5 seconds.")
-            self.refresh = 5
+            self.INTERVAL = 5
             logger.warning("Check interval has been set to 5 seconds.")
 
         self.socket = None
         self.command_socket = None
-        if self.cfg['use_discord_bot']:
-            self.socket, self.command_socket = self.init_discord_bot()
+        if cfg['use_discord_bot']:
+            self.socket, self.command_socket = self.init_discord_bot(cfg['discord_bot_token'], cfg['target_user_id'], cfg['zmq_port'])
             logger.info('Got socket')
 
             self.poll_thread = threading.Thread(target=self.poll_command, daemon=True)
@@ -112,39 +118,36 @@ class MultiChzzkRecorder:
             "description": f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
             "fields": [
                 {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}", "inline": False},
-                {"name": "저장 디렉토리", "value": f"`{self.root_path}`", "inline": False},
-                {"name": "확인 주기", "value": f"{self.refresh}초", "inline": False},
-                {"name": "fallback 디렉토리 사용", "value": '예' if self.cfg['fallback_to_current_dir'] else '아니오', "inline": False}
+                {"name": "저장 디렉토리", "value": f"`{self.ROOT_PATH}`", "inline": False},
+                {"name": "확인 주기", "value": f"{self.INTERVAL}초", "inline": False},
+                {"name": "마운트 명령어", "value": self.MNT_CMD if self.MNT_CMD else '사용 안함', "inline": False},
+                {"name": "fallback 디렉토리 사용", "value": '예' if self.FALLBACK else '아니오', "inline": False}
             ]
         })
 
         self.loop_running = False
 
-    def init_discord_bot(self):
-        if not self.cfg['discord_bot_token']:
+    def init_discord_bot(self, token, user_id, port):
+        if not token:
             logger.error('Discord bot token is required but not specified. Exiting...')
             sys.exit(1)
-
-        token = self.cfg['discord_bot_token']
-        target_user_id = self.cfg['target_user_id']
-        zmq_port = self.cfg['zmq_port']
 
         logger.info('Starting discord bot..')
         self.discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
                                                 "-t", token,
-                                                "-u", target_user_id,
-                                                "-p", str(zmq_port),
-                                                "-i", str(self.cfg['interval'])])
+                                                "-u", user_id,
+                                                "-p", str(port),
+                                                "-i", str(self.INTERVAL)])
 
         logger.info("Connecting to discord bot...")
 
         context = zmq.Context()
         socket = context.socket(zmq.PAIR)
         socket.linger = 250
-        socket.connect(f"tcp://localhost:{self.cfg['zmq_port']}")
+        socket.connect(f"tcp://localhost:{port}")
 
         command_socket = context.socket(zmq.REP)
-        command_socket.bind(f"tcp://*:{self.cfg['zmq_port'] + 1}")
+        command_socket.bind(f"tcp://*:{[port + 1]}")
 
         while True:
             try:
@@ -253,7 +256,7 @@ class MultiChzzkRecorder:
                 break
 
         username = channel_data['channelName']
-        file_dir = os.path.join(self.root_path, username)
+        file_dir = os.path.join(self.ROOT_PATH, username)
 
         if not os.path.isdir(file_dir):
             logger.info(f'Creating directory for {channel_id} ({username})')
@@ -347,24 +350,36 @@ class MultiChzzkRecorder:
                     if is_streaming is None:
                         self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
                         message_sent = True
-                    elif is_streaming and not stream_data['adult'] and self.recorder_processes[channel_id]['recorder'] is None:
+                    elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
                         logger.info(f"{channel_id} is online. Starting recording...")
                         now = datetime.datetime.now()
                         _data = {
                             "username": self.record_dict[channel_id]["channelName"],
                             "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
                             "stream_started": datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['time_format']),
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
                             "stream_started_msg": datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.cfg['msg_time_format']),
-                            "record_started": now.strftime(self.cfg['time_format'])
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT),
+                            "record_started": now.strftime(self.TIME_FORMAT)
                         }
-                        file_name = self.cfg['file_name_format'].format(**_data)
+                        file_name = self.FILE_NAME_FORMAT.format(**_data)
 
-                        if not os.path.isdir(self.root_path):
+                        if not os.path.isdir(self.ROOT_PATH):
                             logger.error("Root path does not exist!")
+                            if self.MNT_CMD:
+                                logger.info("Attempting to mount...")
+                                try:
+                                    subprocess.run(shlex.split(self.MNT_CMD), check=True)
 
-                            if self.cfg['fallback_to_current_dir']:
+                                    if not os.path.isdir(self.ROOT_PATH):
+                                        raise FileNotFoundError
+                                    else:
+                                        logger.info("Mounted successfully.")
+
+                                except (FileNotFoundError, subprocess.CalledProcessError):
+                                    logger.error("Mount command failed!")
+
+                            if not os.path.isdir(self.ROOT_PATH) and self.FALLBACK:
                                 logger.info("Saving to current directory as fallback...")
 
                                 if not os.path.isdir('fallback_recordings'):
@@ -383,7 +398,7 @@ class MultiChzzkRecorder:
                                                   '저장 디렉토리가 온라인이고 마운트됐는지 확인하세요.')
                                 continue
                         else:
-                            file_dir = os.path.join(self.root_path, username)
+                            file_dir = os.path.join(self.ROOT_PATH, username)
 
                         rec_file_path = os.path.join(file_dir, file_name)
 
@@ -402,7 +417,8 @@ class MultiChzzkRecorder:
                         command_string = 'streamlink ' \
                                       f'https://chzzk.naver.com/live/{channel_id} ' \
                                       f'{self.quality} ' \
-                                      f'-o "{rec_file_path}"'
+                                      f'-o "{rec_file_path}"' \
+                                      f"--http-header Cookie='NID_SES={self.NID_SES}; NID_AUT={self.NID_AUT}'"
 
                         command = shlex.split(command_string)
 
@@ -421,10 +437,9 @@ class MultiChzzkRecorder:
                             "fields": [
                                 {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
                                 {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
-                                {"name": "녹화 시작", "value": f"`{now.strftime(self.cfg['msg_time_format'])}`", "inline": False},
+                                {"name": "녹화 시작", "value": f"`{now.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
                                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
                             ]
-
                         })
                         message_sent = True
 
@@ -433,7 +448,7 @@ class MultiChzzkRecorder:
                 except requests.RequestException:
                     logger.error(f'Exception while checking {channel_id}')
 
-            logger.info(f'Check cycle complete. Starting next cycle in {str(self.refresh)} seconds.')
+            logger.info(f'Check cycle complete. Starting next cycle in {str(self.INTERVAL)} seconds.')
 
             if self.recording_count:
                 logger.info(f'{self.recording_count} recording(s) in progress')
@@ -442,7 +457,7 @@ class MultiChzzkRecorder:
                 self.send_alive()
 
             self.loop_running = False
-            time.sleep(self.refresh)
+            time.sleep(self.INTERVAL)
 
     def cleanup(self):
         logger.info("Cleaning up...")
@@ -474,6 +489,7 @@ def main():
                 'msg_time_format': '%y-%m-%d %H:%M:%S',
                 'recording_save_root_dir': '',
                 'fallback_to_current_dir': True,
+                'mount_command': '',
                 'interval': 10,
                 'use_discord_bot': False,
                 'zmq_port': 5555,
