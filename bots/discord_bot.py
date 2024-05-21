@@ -144,11 +144,38 @@ class DiscordBot(commands.Bot):
 
             self.command_busy = False
 
+        @self.command(name='dl')
+        async def dl(ctx, url: str = '', quality: str = ''):
+            if self.command_busy:
+                await ctx.send('다른 명령이 이미 실행 중입니다.')
+                return
+            elif not url:
+                await ctx.send('다운로드할 URL을 입력해야 합니다.')
+                return
+
+            self.command_busy = True
+
+            self.command_socket.send_json({'type': 'dl', 'url': url, 'quality': quality})
+            await self.send_result_after_command(ctx)
+
+            self.command_busy = False
+
     async def send_result_after_command(self, ctx):
-        result = self.command_socket.recv_json()
-        title = result['title']
-        message = result['message']
-        embed = ds.Embed(title=title, description=message)
+        data = self.command_socket.recv_json()
+
+        if data['type'] == 'message':
+            title = data['title']
+            message = data['message']
+            embed = ds.Embed(title=title, description=message)
+        elif data['type'] == 'embed':
+            if 'color' not in data['contents']:
+                data['contents']['color'] = 0x73F8AA
+            embed = ds.Embed.from_dict(data['contents'])
+        else:
+            embed = ds.Embed(title='오류', description='올바르지 않은 응답입니다.')
+
+        embed.set_author(name='치지직 레코더',
+                         icon_url='https://ssl.pstatic.net/static/nng/glive/icon/favicon.png')
         await ctx.send(embed=embed)
 
     async def send_message(self, embed):

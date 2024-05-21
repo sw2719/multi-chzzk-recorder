@@ -11,12 +11,15 @@ import threading
 import traceback
 import shlex
 import atexit
+from packaging import version
 from typing import Dict, Any
 
 import requests
 import zmq
 
-from chzzk.checker import ChzzkChecker
+from chzzk.api import ChzzkAPI
+
+STREAMLINK_MIN_VERSION = "6.7.4"
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -35,6 +38,22 @@ def truncate_long_name(s: str) -> str:
     return (s[:75] + '..') if len(s) > 77 else s
 
 
+def check_streamlink() -> bool:
+    """check if streamlink >= 5.0 is installed"""
+    try:
+        ret = subprocess.check_output(["streamlink", "--version"], universal_newlines=True)
+        re_ver = re.search(r"streamlink (\d+)\.(\d+)\.(\d+)", ret, flags=re.IGNORECASE)
+
+        if not re_ver:
+            raise FileNotFoundError
+
+        s_ver = version.parse('.'.join(re_ver.groups()))
+        return s_ver >= version.parse(STREAMLINK_MIN_VERSION)
+    except FileNotFoundError:
+        logger.error("Streamlink not found. Install streamlink first then launch again.")
+        sys.exit(1)
+
+
 class MultiChzzkRecorder:
     def __init__(self, quality: str, cfg: dict) -> None:
         logger.info("Initializing Multi Chzzk Recorder...")
@@ -42,8 +61,8 @@ class MultiChzzkRecorder:
         ret = subprocess.check_output(["streamlink", "--plugins"], universal_newlines=True)
         installed_plugins = ret.split(': ')[-1].split(', ')
 
-        if 'chzzk' not in installed_plugins:
-            logger.error("Streamlink plugin for chzzk is not installed. Exiting...")
+        if not check_streamlink():
+            logger.error("streamlink 6.7.4 or newer is required. Please update streamlink.")
             sys.exit(1)
 
         self.recording_count = 0
@@ -71,7 +90,7 @@ class MultiChzzkRecorder:
 
         self.quality = quality
         logger.info(f'Quality set to: {self.quality}')
-        self.chzzk = ChzzkChecker(self.NID_AUT, self.NID_SES)
+        self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
 
         for channel_id in channel_ids:
             while True:
@@ -147,7 +166,7 @@ class MultiChzzkRecorder:
         socket.connect(f"tcp://localhost:{port}")
 
         command_socket = context.socket(zmq.REP)
-        command_socket.bind(f"tcp://*:{[port + 1]}")
+        command_socket.bind(f"tcp://*:{port + 1}")
 
         while True:
             try:
@@ -221,6 +240,10 @@ class MultiChzzkRecorder:
                     self.remove_streamer(data['channel_id'])
                 elif data['type'] == 'list':
                     self.send_list()
+                elif data['type'] == 'dl':
+                    self.download_vod(data['url'], data['quality'])
+                else:
+                    logger.error(f'Unknown command type: {data["type"]}')
 
             except zmq.ZMQError:
                 pass
@@ -290,6 +313,129 @@ class MultiChzzkRecorder:
         self.send_message("제거 성공", f"채널 `{removed_channel_data['channelName']} ({channel_id})`을/를 녹화 목록에서 제거했습니다.", socket=self.command_socket)
 
         logger.info(f'Removed {channel_id} from record dict')
+
+    def get_file_path(self, username: str, file_name: str, is_vod=False):
+        if is_vod:
+            sub_dir = 'VOD'
+        else:
+            sub_dir = username
+
+        if not os.path.isdir(self.ROOT_PATH):
+            logger.error("Root path does not exist!")
+            if self.MNT_CMD:
+                logger.info("Attempting to mount...")
+                try:
+                    subprocess.run(shlex.split(self.MNT_CMD), check=True)
+
+                    if not os.path.isdir(self.ROOT_PATH):
+                        raise FileNotFoundError
+                    else:
+                        logger.info("Mounted successfully.")
+
+                except (FileNotFoundError, subprocess.CalledProcessError):
+                    logger.error("Mount command failed!")
+
+            if not os.path.isdir(self.ROOT_PATH) and self.FALLBACK:
+                logger.info("Saving to current directory as fallback...")
+
+                if not os.path.isdir('fallback_recordings'):
+                    os.mkdir('fallback_recordings')
+
+                if not os.path.isdir(os.path.join('fallback_recordings', sub_dir)):
+                    os.mkdir(os.path.join('fallback_recordings', sub_dir))
+
+                file_dir = os.path.join(os.getcwd(), 'fallback_recordings', sub_dir)
+                self.send_message('경고',
+                                  f'`{username}`의 녹화를 fallback 디렉토리에 저장합니다..\n'
+                                  '설정된 녹화 저장 디렉토리가 접근 가능한지 확인하세요.')
+            else:
+                self.send_message('오류',
+                                  f"저장 디렉토리가 접근 불가능하므로 녹화를 시작할 수 없습니다.\n"
+                                  '저장 디렉토리가 온라인이고 마운트됐는지 확인하세요.')
+                return None
+        else:
+            file_dir = os.path.join(self.ROOT_PATH, sub_dir)
+
+        rec_file_path = os.path.join(file_dir, file_name)
+
+        uq_num = 0
+        while os.path.exists(rec_file_path):
+            logger.warning("File already exists, will add numbers: %s", rec_file_path)
+            uq_num += 1
+            file_path_no_ext, file_ext = os.path.splitext(rec_file_path)
+
+            if uq_num > 1 and file_path_no_ext.endswith(f" ({uq_num - 1})"):
+                file_path_no_ext = file_path_no_ext.removesuffix(f" ({uq_num - 1})")
+
+            rec_file_path = f"{file_path_no_ext} ({uq_num}){file_ext}"
+
+        return rec_file_path
+
+    def download_vod(self, url: str, quality: str):
+        def on_streamlink_exit(return_code):
+            if return_code == 0:
+                self.send_message('다운로드 성공', f'`{url}` 의 다운로드가 완료되었습니다.', socket=self.socket)
+            else:
+                self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
+
+        if not quality:
+            quality = self.quality
+
+        def start_dl(on_exit, popen_args):
+            proc = subprocess.Popen(popen_args)
+            proc.wait()
+            on_exit(proc.returncode)
+            return
+
+        now = datetime.datetime.now()
+        video_data = self.chzzk.get_video(url)
+
+        if video_data is None:
+            self.send_message('다운로드 실패',
+                              f'`{url}` 의 정보를 가져오는 데 실패했습니다.\n올바른 URL인지 확인하세요.', socket=self.command_socket)
+            return
+
+        username = video_data['channel']["channelName"]
+        video_title = video_data["videoTitle"]
+        stream_started_time = datetime.datetime.strptime(video_data["liveOpenDate"], '%Y-%m-%d %H:%M:%S')
+
+        _data = {
+            "username": username,
+            "escaped_title": truncate_long_name(escape_filename(video_title)),
+            "stream_started": stream_started_time.strftime(self.TIME_FORMAT),
+            "record_started": now.strftime(self.TIME_FORMAT)
+        }
+        file_name = str(self.FILE_NAME_FORMAT.format(**_data))
+        rec_file_path = self.get_file_path(username, file_name, is_vod=True)
+
+        logger.info(f"Downloading {url} at {rec_file_path}")
+
+        command_string = 'streamlink ' \
+                         f'{url} ' \
+                         f'{quality} ' \
+                         f'-o "{rec_file_path}" ' \
+                         f'--http-cookie NID_AUT={self.NID_AUT} ' \
+                         f'--http-cookie NID_SES={self.NID_SES}'
+
+        command = shlex.split(command_string)
+
+        thread = threading.Thread(target=start_dl, args=(on_streamlink_exit, command))
+        thread.start()
+
+        self.send_embed({
+            "title": "다운로드 시작됨",
+            "description": f"VOD 다운로드 중...",
+            "thumbnail": {
+                "url": video_data['thumbnailImageUrl']
+            },
+            "fields": [
+                {"name": "제목", "value": f"`{video_title}`", "inline": False},
+                {"name": "방송 시작", "value": f"`{stream_started_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
+            ]
+        }, socket=self.command_socket)
+
+        return
 
     def loop(self):
         """main loop function"""
@@ -364,61 +510,20 @@ class MultiChzzkRecorder:
                         }
                         file_name = self.FILE_NAME_FORMAT.format(**_data)
 
-                        if not os.path.isdir(self.ROOT_PATH):
-                            logger.error("Root path does not exist!")
-                            if self.MNT_CMD:
-                                logger.info("Attempting to mount...")
-                                try:
-                                    subprocess.run(shlex.split(self.MNT_CMD), check=True)
+                        rec_file_path = self.get_file_path(username, file_name)
 
-                                    if not os.path.isdir(self.ROOT_PATH):
-                                        raise FileNotFoundError
-                                    else:
-                                        logger.info("Mounted successfully.")
-
-                                except (FileNotFoundError, subprocess.CalledProcessError):
-                                    logger.error("Mount command failed!")
-
-                            if not os.path.isdir(self.ROOT_PATH) and self.FALLBACK:
-                                logger.info("Saving to current directory as fallback...")
-
-                                if not os.path.isdir('fallback_recordings'):
-                                    os.mkdir('fallback_recordings')
-
-                                if not os.path.isdir(os.path.join('fallback_recordings', username)):
-                                    os.mkdir(os.path.join('fallback_recordings', username))
-
-                                file_dir = os.path.join(os.getcwd(), 'fallback_recordings', username)
-                                self.send_message('경고',
-                                                  f'`{username}`의 녹화를 fallback 디렉토리에 저장합니다..\n'
-                                                  '설정된 녹화 저장 디렉토리가 접근 가능한지 확인하세요.')
-                            else:
-                                self.send_message('오류',
-                                                  f"저장 디렉토리가 접근 불가능하므로 녹화를 시작할 수 없습니다.\n"
-                                                  '저장 디렉토리가 온라인이고 마운트됐는지 확인하세요.')
-                                continue
-                        else:
-                            file_dir = os.path.join(self.ROOT_PATH, username)
-
-                        rec_file_path = os.path.join(file_dir, file_name)
-
-                        uq_num = 0
-                        while os.path.exists(rec_file_path):
-                            logger.warning("File already exists, will add numbers: %s", rec_file_path)
-                            uq_num += 1
-                            file_path_no_ext, file_ext = os.path.splitext(rec_file_path)
-                            if uq_num > 1 and file_path_no_ext.endswith(f" ({uq_num - 1})"):
-                                file_path_no_ext = file_path_no_ext.removesuffix(f" ({uq_num - 1})")
-                            rec_file_path = f"{file_path_no_ext} ({uq_num}){file_ext}"
+                        if rec_file_path is None:
+                            continue
 
                         # start streamlink process
                         logger.info("Recorded video will be saved at %s", rec_file_path)
 
                         command_string = 'streamlink ' \
-                                      f'https://chzzk.naver.com/live/{channel_id} ' \
-                                      f'{self.quality} ' \
-                                      f'-o "{rec_file_path}"' \
-                                      f"--http-header Cookie='NID_SES={self.NID_SES}; NID_AUT={self.NID_AUT}'"
+                                         f'https://chzzk.naver.com/live/{channel_id} ' \
+                                         f'{self.quality} ' \
+                                         f'-o "{rec_file_path}" ' \
+                                         f'--http-cookie NID_AUT={self.NID_AUT} ' \
+                                         f'--http-cookie NID_SES={self.NID_SES}'
 
                         command = shlex.split(command_string)
 
