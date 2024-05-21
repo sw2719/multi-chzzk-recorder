@@ -591,7 +591,7 @@ def main():
                 'nid_ses': '',
                 'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
                 'time_format': '%y-%m-%d %H_%M_%S',
-                'msg_time_format': '%y-%m-%d %H:%M:%S',
+                'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
                 'recording_save_root_dir': '',
                 'fallback_to_current_dir': True,
                 'mount_command': '',
