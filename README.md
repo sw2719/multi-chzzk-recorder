@@ -15,7 +15,7 @@
 
 # 사용 방법
 * streamlink 6.7.4 이상이 필요합니다.
-* 최초 실행시 설정 파일이 생성되고 프로그램이 종료됩니다. 저장 디렉토리를 설정 후 다시 프로그램을 실행하세요. 디스코드 봇을 사용할 경우 봇과 관련된 항목들도 설정해야 합니다. 
+* 최초 실행시 설정 파일이 생성되고 프로그램이 종료됩니다. NID_SES, NID_AUT, 저장 디렉토리를 설정 후 다시 프로그램을 실행하세요.
 
 # 디스코드 봇 사용 방법
 * 봇을 생성하고 Server Members Intent를 활성화하세요.
@@ -27,12 +27,16 @@
   - dl [URL] [품질 (optional)] - VOD 다운로드 
 
 # 설정 파일
+필수로 설정이 필요한 항목: nid_ses, nid_aut, recording_save_root_dir
 ```
+"nid_ses": 네이버 쿠키값
+"nid_aut": 네이버 쿠키값
 "file_name_format": 파일명 포맷 (기본값: "[{username}]{stream_started}_{escaped_title}.ts")
 "time_format": 파일명에 사용할 시간 포맷 (기본값: "%y-%m-%d %H_%M_%S")
-"msg_time_format": 디스코드 녹화 알림에 사용할 시간 포맷 (기본값: "%y-%m-%d %H:%M:%S")
+"msg_time_format": 디스코드 녹화 알림에 사용할 시간 포맷 (기본값: "%Y년 %m월 %d일 %H시 %M분 %S초")
 "recording_save_root_dir": 녹화 파일을 저장할 디렉토리
 "fallback_to_current_dir": 저장 디렉토리를 사용할 수 없을 때 프로그램 디렉토리에 녹화 파일 저장 (기본값: true)
+"mount_command": 저장 디렉토리를 사용할 수 없을 때 실행할 명령어 (기본값: 없음)
 "interval": 생방송 확인 주기 (기본값: 10)
 "use_discord_bot": 디스코드 봇 사용 여부 (기본값: false)
 "zmq_port": 메인 프로세스와 디스코드 봇 간 통신을 위한 시작포트 (기본값: 5555)
