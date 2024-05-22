@@ -31,6 +31,7 @@
 ```
 "nid_ses": 네이버 쿠키값
 "nid_aut": 네이버 쿠키값
+"quality": 녹화 품질 (기본값: best)
 "file_name_format": 파일명 포맷 (기본값: "[{username}]{stream_started}_{escaped_title}.ts")
 "time_format": 파일명에 사용할 시간 포맷 (기본값: "%y-%m-%d %H_%M_%S")
 "msg_time_format": 디스코드 녹화 알림에 사용할 시간 포맷 (기본값: "%Y년 %m월 %d일 %H시 %M분 %S초")
