@@ -3,9 +3,8 @@ import json
 import logging
 import re
 
-from typing import Union, Dict
+from typing import Union, Dict, TypedDict
 from fake_useragent import UserAgent
-from typing import TypedDict
 
 REQUEST_TIMEOUT = 15
 ua = UserAgent()
