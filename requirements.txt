@@ -1,3 +1,5 @@
+streamlink >= 6.7.4
 disnake
 pyzmq
 requests
+packaging
