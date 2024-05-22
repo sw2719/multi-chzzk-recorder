@@ -132,17 +132,17 @@ class MultiChzzkRecorder:
 
         streamers_list_str = '\n'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
 
-        self.send_embed({
-            "title": "치지직 레코더 시작됨",
-            "description": f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
-            "fields": [
+        self.send_embed(
+            title="치지직 레코더 시작됨",
+            description=f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
+            fields=[
                 {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}", "inline": False},
                 {"name": "저장 디렉토리", "value": f"`{self.ROOT_PATH}`", "inline": False},
                 {"name": "확인 주기", "value": f"{self.INTERVAL}초", "inline": False},
                 {"name": "마운트 명령어", "value": self.MNT_CMD if self.MNT_CMD else '사용 안함', "inline": False},
                 {"name": "fallback 디렉토리 사용", "value": '예' if self.FALLBACK else '아니오', "inline": False}
             ]
-        })
+        )
 
         self.loop_running = False
 
@@ -200,21 +200,32 @@ class MultiChzzkRecorder:
                 'message': message
             })
 
-    def send_embed(self, contents: Dict[str, Any], socket=None) -> None:
+    def send_embed(self, title: str, description: str, socket=None, **kwargs) -> None:
         """Send an embed message to the discord bot.
-        :param contents: Embed contents.
-        Supported keys: title, type, description, url, timestamp, color, fields, thumbnail, image, footer, provider
+        :param title: Title of the embed message.
+        :param description: Description of the embed message.
+        :param socket: ZMQ socket to send the message to. If None, the default socket will be used if available.
+        :param kwargs: Additional fields for the embed message.
+        Available fields: url, timestamp, color, fields, thumbnail, image, footer, provider
+        """
 
-        :param socket: ZMQ socket to send the message to. If None, the default socket will be used if available."""
         if socket is None and self.socket:
             self.socket.send_json({
                 'type': 'embed',
-                'contents': contents
+                'contents': {
+                    "title": title,
+                    "description": description,
+                    **kwargs
+                }
             })
         elif socket:
             socket.send_json({
                 'type': 'embed',
-                'contents': contents
+                'contents': {
+                    "title": title,
+                    "description": description,
+                    **kwargs
+                }
             })
 
     def send_alive(self, socket=None) -> None:
@@ -398,11 +409,15 @@ class MultiChzzkRecorder:
         username = video_data['channel']["channelName"]
         video_title = video_data["videoTitle"]
         stream_started_time = datetime.datetime.strptime(video_data["liveOpenDate"], '%Y-%m-%d %H:%M:%S')
+        uploaded_time = datetime.datetime.strptime(video_data["publishDate"], '%Y-%m-%d %H:%M:%S')
+
+        video_duration = datetime.timedelta(seconds=video_data["duration"])
 
         _data = {
             "username": username,
             "escaped_title": truncate_long_name(escape_filename(video_title)),
             "stream_started": stream_started_time.strftime(self.TIME_FORMAT),
+            "uploaded": uploaded_time.strftime(self.TIME_FORMAT),
             "record_started": now.strftime(self.TIME_FORMAT)
         }
         file_name = str(self.FILE_NAME_FORMAT.format(**_data))
@@ -422,18 +437,20 @@ class MultiChzzkRecorder:
         thread = threading.Thread(target=start_dl, args=(on_streamlink_exit, command))
         thread.start()
 
-        self.send_embed({
-            "title": "다운로드 시작됨",
-            "description": f"VOD 다운로드 중...",
-            "thumbnail": {
-                "url": video_data['thumbnailImageUrl']
-            },
-            "fields": [
+        self.send_embed(
+            title="다운로드 시작됨",
+            description=f"VOD 다운로드 중...",
+            thumbnail={"url": video_data['thumbnailImageUrl']},
+            fields=[
                 {"name": "제목", "value": f"`{video_title}`", "inline": False},
                 {"name": "방송 시작", "value": f"`{stream_started_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                {"name": "업로드", "value": f"`{uploaded_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                {"name": "길이", "value": f"{str(video_duration)}`", "inline": False},
+                {"name": "품질", "value": f"`{'최고 품질' if quality == 'best' else quality}`", "inline": False},
                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
-            ]
-        }, socket=self.command_socket)
+            ],
+            socket=self.command_socket
+        )
 
         return
 
