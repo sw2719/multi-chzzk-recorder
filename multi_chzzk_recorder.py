@@ -60,7 +60,7 @@ class RecorderProcess(TypedDict):
 
 
 class MultiChzzkRecorder:
-    def __init__(self, quality: str, cfg: dict) -> None:
+    def __init__(self, cfg: dict) -> None:
         logger.info("Initializing Multi Chzzk Recorder...")
 
         if not check_streamlink():
@@ -71,7 +71,7 @@ class MultiChzzkRecorder:
         self.record_dict = {}
         self.discord_process = None
 
-        self.FFMPEG = "ffmpeg"
+        self.quality = cfg['quality']
         self.INTERVAL = cfg["interval"]
         self.ROOT_PATH = cfg['recording_save_root_dir']
         self.NID_AUT = cfg['nid_aut']
@@ -90,7 +90,6 @@ class MultiChzzkRecorder:
             open('record_list.txt', 'w').close()
             channel_ids = []
 
-        self.quality = quality
         logger.info(f'Quality set to: {self.quality}')
         self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
 
@@ -155,10 +154,10 @@ class MultiChzzkRecorder:
 
         logger.info('Starting discord bot..')
         self.discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
-                                                "-t", token,
-                                                "-u", user_id,
-                                                "-p", str(port),
-                                                "-i", str(self.INTERVAL)])
+                                                 "-t", token,
+                                                 "-u", user_id,
+                                                 "-p", str(port),
+                                                 "-i", str(self.INTERVAL)])
 
         logger.info("Connecting to discord bot...")
 
@@ -591,7 +590,6 @@ class MultiChzzkRecorder:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-q", "--quality", default="best")
     parser.add_argument("-l", "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     args = parser.parse_args()
 
@@ -604,6 +602,7 @@ def main():
             cfg = {
                 'nid_aut': '',
                 'nid_ses': '',
+                'quality': 'best',
                 'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
                 'time_format': '%y-%m-%d %H_%M_%S',
                 'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
@@ -634,7 +633,7 @@ def main():
         logger.info("Fallback to current directory is enabled.")
         logger.info("If save directory is offline or unreachable, recordings will be saved to current directory instead.")
 
-    recorder = MultiChzzkRecorder(args.quality, cfg)
+    recorder = MultiChzzkRecorder(cfg)
     atexit.register(recorder.cleanup)
     recorder.loop()
 
