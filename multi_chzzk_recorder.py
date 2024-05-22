@@ -39,7 +39,7 @@ def truncate_long_name(s: str) -> str:
 
 
 def check_streamlink() -> bool:
-    """check if streamlink >= 5.0 is installed"""
+    """Check if streamlink is installed and is of the required version."""
     try:
         ret = subprocess.check_output(["streamlink", "--version"], universal_newlines=True)
         re_ver = re.search(r"streamlink (\d+)\.(\d+)\.(\d+)", ret, flags=re.IGNORECASE)
