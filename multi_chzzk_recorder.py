@@ -10,10 +10,12 @@ import time
 import threading
 import shlex
 import atexit
-from packaging import version
 
 import requests
 import zmq
+
+from typing import Dict, TypedDict, Union
+from packaging import version
 
 from api.chzzk import ChzzkAPI
 
@@ -50,6 +52,11 @@ def check_streamlink() -> bool:
     except FileNotFoundError:
         logger.error("Streamlink not found. Install streamlink first then launch again.")
         sys.exit(1)
+
+
+class RecorderProcess(TypedDict):
+    recorder: Union[None, subprocess.Popen]
+    path: Union[None, str]
 
 
 class MultiChzzkRecorder:
@@ -104,9 +111,9 @@ class MultiChzzkRecorder:
                     logger.error(f'Failed to get channel {channel_id}. Retrying in 5 seconds...')
                     time.sleep(5)
 
-        self.recorder_processes = {}
+        self.recorder_processes: Dict[str, RecorderProcess] = {}
         for channel_id in self.record_dict:
-            self.recorder_processes[channel_id] = {
+            self.recorder_processes[channel_id]: RecorderProcess = {
                 'recorder': None,
                 'path': None
             }
@@ -278,7 +285,7 @@ class MultiChzzkRecorder:
         while True:
             if not self.loop_running:
                 self.record_dict[channel_id] = channel_data
-                self.recorder_processes[channel_id] = {
+                self.recorder_processes[channel_id]: RecorderProcess = {
                     'recorder': None,
                     'path': None
                 }
