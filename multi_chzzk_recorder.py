@@ -8,11 +8,9 @@ import sys
 import argparse
 import time
 import threading
-import traceback
 import shlex
 import atexit
 from packaging import version
-from typing import Dict, Any
 
 import requests
 import zmq
@@ -57,9 +55,6 @@ def check_streamlink() -> bool:
 class MultiChzzkRecorder:
     def __init__(self, quality: str, cfg: dict) -> None:
         logger.info("Initializing Multi Chzzk Recorder...")
-
-        ret = subprocess.check_output(["streamlink", "--plugins"], universal_newlines=True)
-        installed_plugins = ret.split(': ')[-1].split(', ')
 
         if not check_streamlink():
             logger.error("streamlink 6.7.4 or newer is required. Please update streamlink.")
@@ -482,18 +477,15 @@ class MultiChzzkRecorder:
                             else:  # Less than 1KB
                                 readable_size = f"{file_size} Bytes"
 
-                            self.send_embed({
-                                "title": "녹화 종료됨",
-                                "description": f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
-                                "thumbnail": {
-                                    "url": self.record_dict[channel_id]['channelImageUrl']
-                                },
-                                "fields": [
+                            self.send_embed(
+                                title="녹화 종료됨",
+                                description=f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
+                                thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                                fields=[
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
                                     {"name": "파일 크기", "value": readable_size, "inline": False}
                                 ]
-
-                            })
+                            )
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
@@ -550,19 +542,17 @@ class MultiChzzkRecorder:
 
                         self.recording_count += 1
 
-                        self.send_embed({
-                            "title": "녹화 시작됨",
-                            "description": f"채널 `{username}`의 녹화를 시작합니다.",
-                            "thumbnail": {
-                                "url": self.record_dict[channel_id]['channelImageUrl']
-                            },
-                            "fields": [
+                        self.send_embed(
+                            title="녹화 시작됨",
+                            description=f"채널 `{username}`의 녹화를 시작합니다.",
+                            thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                            fields=[
                                 {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
                                 {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
                                 {"name": "녹화 시작", "value": f"`{now.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
                                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
                             ]
-                        })
+                        )
                         message_sent = True
 
                     elif not is_streaming:
