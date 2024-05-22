@@ -17,7 +17,7 @@ from typing import Dict, Any
 import requests
 import zmq
 
-from chzzk.api import ChzzkAPI
+from api.chzzk import ChzzkAPI
 
 STREAMLINK_MIN_VERSION = "6.7.4"
 
