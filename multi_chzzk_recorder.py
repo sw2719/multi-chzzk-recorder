@@ -21,6 +21,23 @@ from api.chzzk import ChzzkAPI
 
 STREAMLINK_MIN_VERSION = "6.7.4"
 
+DEFAULT_CFG = {
+    'nid_aut': '',
+    'nid_ses': '',
+    'quality': 'best',
+    'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+    'time_format': '%y-%m-%d %H_%M_%S',
+    'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
+    'recording_save_root_dir': '',
+    'fallback_to_current_dir': True,
+    'mount_command': '',
+    'interval': 10,
+    'use_discord_bot': False,
+    'zmq_port': 5555,
+    'discord_bot_token': '',
+    'target_user_id': ''
+}
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 fmt = logging.Formatter("{asctime} {levelname} {name} {message}", style="{")
@@ -621,7 +638,23 @@ def main():
             sys.exit(0)
     else:
         with open('config.json', 'r') as f:
-            cfg = json.load(f)
+            temp_cfg = json.load(f)
+            cfg = {}
+
+        cfg_update_required = False
+
+        for key in DEFAULT_CFG.keys():
+            if key not in temp_cfg:
+                cfg[key] = DEFAULT_CFG[key]
+                logger.info(f'Adding missing config key: {key}')
+                cfg_update_required = True
+            else:
+                cfg[key] = temp_cfg[key]
+
+        if cfg_update_required:
+            with open('config.json', 'w') as f:
+                json.dump(cfg, f, indent=4)
+                logger.info('Updated config file with new settings.')
 
     if os.path.isdir(cfg['recording_save_root_dir']):
         logger.info(f"Save directory set to: {cfg['recording_save_root_dir']}")
