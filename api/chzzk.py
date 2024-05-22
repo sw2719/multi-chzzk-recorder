@@ -59,7 +59,7 @@ class ChzzkAPI:
                 logger.error(f'Timeout while getting channel {channel_id}')
                 return None
 
-    def check_live(self, channel_id: str) -> (bool, ChzzkStream | None):
+    def check_live(self, channel_id: str) -> (bool, Union[ChzzkStream, None]):
         with requests.get(f'https://api.chzzk.naver.com/service/v1/channels/{channel_id}/live-detail',
                           headers=request_header, cookies=self._cookies, timeout=REQUEST_TIMEOUT) as r:
             try:
@@ -75,7 +75,7 @@ class ChzzkAPI:
             data = json.loads(r.text)
             return data['content']['status'] == 'OPEN', data['content']
 
-    def get_video(self, video_url: str) -> (ChzzkVideo | None):
+    def get_video(self, video_url: str) -> Union[ChzzkVideo, None]:
         match = re.match(r'https://chzzk.naver.com/video/(\d+)', video_url)
 
         if not match:
