@@ -317,6 +317,7 @@ class MultiChzzkRecorder:
                 if self.recorder_processes[channel_id]['recorder'] is not None:
                     self.recorder_processes[channel_id]['recorder'].terminate()
                     self.recorder_processes[channel_id]['recorder'].wait()
+                    self.recording_count -= 1
 
                 del self.recorder_processes[channel_id]
                 break
