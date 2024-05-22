@@ -402,28 +402,17 @@ class MultiChzzkRecorder:
         return rec_file_path
 
     def download_vod(self, url: str, quality: str):
-        def on_streamlink_exit(return_code):
-            if return_code == 0:
-                self.send_message('다운로드 성공', f'`{url}` 의 다운로드가 완료되었습니다.', socket=self.socket)
-            else:
-                self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
-
-        if not quality:
-            quality = self.quality
-
-        def start_dl(on_exit, popen_args):
-            proc = subprocess.Popen(popen_args)
-            proc.wait()
-            on_exit(proc.returncode)
-            return
-
         now = datetime.datetime.now()
         video_data = self.chzzk.get_video(url)
 
         if video_data is None:
             self.send_message('다운로드 실패',
-                              f'`{url}` 의 정보를 가져오는 데 실패했습니다.\n올바른 URL인지 확인하세요.', socket=self.command_socket)
+                              f'`{url}`의 정보를 가져오는 데 실패했습니다.\n올바른 URL인지 확인하세요.',
+                              socket=self.command_socket)
             return
+
+        if not quality:
+            quality = self.quality
 
         username = video_data['channel']["channelName"]
         video_title = video_data["videoTitle"]
@@ -442,7 +431,31 @@ class MultiChzzkRecorder:
         file_name = str(self.FILE_NAME_FORMAT.format(**_data))
         rec_file_path = self.get_file_path(username, file_name, is_vod=True)
 
-        logger.info(f"Downloading {url} at {rec_file_path}")
+        def on_streamlink_exit(return_code):
+            nonlocal video_data
+            nonlocal rec_file_path
+            nonlocal now
+
+            if return_code == 0:
+                completed_time = datetime.datetime.now()
+                elapsed_time = completed_time - now
+
+                self.send_embed('다운로드 성공',
+                                f'`{video_data["videoTitle"]}`의 다운로드가 완료되었습니다.',
+                                fields=[
+                                    {"name": "파일 크기", "value": self.get_readable_file_size(os.path.getsize(rec_file_path)), "inline": False},
+                                    {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False},
+                                    {"name": "소요 시간", "value": f"{str(elapsed_time)}", "inline": False}
+                                ],
+                                socket=self.command_socket)
+            else:
+                self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
+
+        def start_dl(on_exit, popen_args):
+            proc = subprocess.Popen(popen_args)
+            proc.wait()
+            on_exit(proc.returncode)
+            return
 
         command_string = 'streamlink ' \
                          f'{url} ' \
@@ -453,6 +466,7 @@ class MultiChzzkRecorder:
 
         command = shlex.split(command_string)
 
+        logger.info(f"Downloading {url} at {rec_file_path}")
         thread = threading.Thread(target=start_dl, args=(on_streamlink_exit, command))
         thread.start()
 
@@ -488,18 +502,7 @@ class MultiChzzkRecorder:
 
                         try:
                             rec_file_path = self.recorder_processes[channel_id]['path']
-                            file_size = os.path.getsize(rec_file_path)
-
-                            # human-readable file size
-                            # initial size is in bytes
-                            if file_size > 1024 ** 3:  # Over 1GB
-                                readable_size = f"{file_size / (1024 ** 3):.1f} GB"
-                            elif file_size > 1024 ** 2:  # Over 1MB
-                                readable_size = f"{file_size / (1024 ** 2):.1f} MB"
-                            elif file_size > 1024:  # Over 1KB
-                                readable_size = f"{file_size / 1024:.1f} KB"
-                            else:  # Less than 1KB
-                                readable_size = f"{file_size} Bytes"
+                            readable_size = self.get_readable_file_size(os.path.getsize(rec_file_path))
 
                             self.send_embed(
                                 title="녹화 종료됨",
@@ -603,6 +606,21 @@ class MultiChzzkRecorder:
             self.discord_process.wait()
 
         logger.info("Exiting...")
+
+    @staticmethod
+    def get_readable_file_size(size_in_bytes) -> str:
+        # human-readable file size
+        # initial size is in bytes
+        if size_in_bytes > 1024 ** 3:  # Over 1GB
+            readable_size = f"{size_in_bytes / (1024 ** 3):.1f} GB"
+        elif size_in_bytes > 1024 ** 2:  # Over 1MB
+            readable_size = f"{size_in_bytes / (1024 ** 2):.1f} MB"
+        elif size_in_bytes > 1024:  # Over 1KB
+            readable_size = f"{size_in_bytes / 1024:.1f} KB"
+        else:  # Less than 1KB
+            readable_size = f"{size_in_bytes} Bytes"
+
+        return readable_size
 
 
 def main():
