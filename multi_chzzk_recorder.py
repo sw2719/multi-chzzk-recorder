@@ -426,7 +426,7 @@ class MultiChzzkRecorder:
             "escaped_title": truncate_long_name(escape_filename(video_title)),
             "stream_started": stream_started_time.strftime(self.TIME_FORMAT),
             "uploaded": uploaded_time.strftime(self.TIME_FORMAT),
-            "record_started": now.strftime(self.TIME_FORMAT)
+            "download_started": now.strftime(self.TIME_FORMAT)
         }
         file_name = str(self.FILE_NAME_FORMAT.format(**_data))
         rec_file_path = self.get_file_path(username, file_name, is_vod=True)
@@ -503,11 +503,12 @@ class MultiChzzkRecorder:
                         try:
                             rec_file_path = self.recorder_processes[channel_id]['path']
                             readable_size = self.get_readable_file_size(os.path.getsize(rec_file_path))
+                            username = self.record_dict[channel_id]['channelName']
 
                             self.send_embed(
                                 title="녹화 종료됨",
-                                description=f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
-                                thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                                description=f"채널 `{username}`의 녹화가 끝났습니다.",
+                                author={"name": username, "icon_url": self.record_dict[channel_id]["channelImageUrl"]},
                                 fields=[
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
                                     {"name": "파일 크기", "value": readable_size, "inline": False}
@@ -540,8 +541,6 @@ class MultiChzzkRecorder:
                             "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
                             "stream_started": datetime.datetime.strptime(
                                 stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
-                            "stream_started_msg": datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT),
                             "record_started": now.strftime(self.TIME_FORMAT)
                         }
                         file_name = self.FILE_NAME_FORMAT.format(**_data)
@@ -569,14 +568,17 @@ class MultiChzzkRecorder:
 
                         self.recording_count += 1
 
+                        record_started_time_str = datetime.datetime.strptime(
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
                         self.send_embed(
                             title="녹화 시작됨",
                             description=f"채널 `{username}`의 녹화를 시작합니다.",
-                            thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                            thumbnail={"url": stream_data["thumbnailImageUrl"]},
+                            author={"name": username, "icon_url": self.record_dict[channel_id]["channelImageUrl"]},
                             fields=[
                                 {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
-                                {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
-                                {"name": "녹화 시작", "value": f"`{now.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                                {"name": "방송 시작", "value": record_started_time_str, "inline": False},
+                                {"name": "녹화 시작", "value": now.strftime(self.MSG_TIME_FORMAT), "inline": False},
                                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
                             ]
                         )
@@ -637,11 +639,12 @@ def main():
             cfg = {
                 'nid_aut': '',
                 'nid_ses': '',
+                'recording_save_root_dir': '',
                 'quality': 'best',
                 'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+                'vod_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
                 'time_format': '%y-%m-%d %H_%M_%S',
                 'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
-                'recording_save_root_dir': '',
                 'fallback_to_current_dir': True,
                 'mount_command': '',
                 'interval': 10,

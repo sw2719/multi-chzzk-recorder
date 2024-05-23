@@ -28,19 +28,43 @@
 
 # 설정 파일
 필수로 설정이 필요한 항목: nid_ses, nid_aut, recording_save_root_dir
-```
-"nid_ses": 네이버 쿠키값
-"nid_aut": 네이버 쿠키값
-"quality": 녹화 품질 (기본값: best)
-"file_name_format": 파일명 포맷 (기본값: "[{username}]{stream_started}_{escaped_title}.ts")
-"time_format": 파일명에 사용할 시간 포맷 (기본값: "%y-%m-%d %H_%M_%S")
-"msg_time_format": 디스코드 녹화 알림에 사용할 시간 포맷 (기본값: "%Y년 %m월 %d일 %H시 %M분 %S초")
-"recording_save_root_dir": 녹화 파일을 저장할 디렉토리
-"fallback_to_current_dir": 저장 디렉토리를 사용할 수 없을 때 프로그램 디렉토리에 녹화 파일 저장 (기본값: true)
-"mount_command": 저장 디렉토리를 사용할 수 없을 때 실행할 명령어 (기본값: 없음)
-"interval": 생방송 확인 주기 (기본값: 10)
-"use_discord_bot": 디스코드 봇 사용 여부 (기본값: false)
-"zmq_port": 메인 프로세스와 디스코드 봇 간 통신을 위한 시작포트 (기본값: 5555)
-"discord_bot_token": 디스코드 봇 토큰 (디스코드 봇 사용시 필요)
-"target_user_id": 자신의 디스코드 ID (디스코드 봇 사용시 필요)
-```
+
+* `nid_ses`: 네이버 쿠키값
+* `nid_aut`: 네이버 쿠키값
+* `recording_save_root_dir`: 녹화 파일을 저장할 디렉토리
+* `quality`: 녹화 품질
+  - 기본값: best
+* `file_name_format`: 실시간 녹화 파일명 포맷 
+  - 기본값: `[{username}]{stream_started}_{escaped_title}.ts`
+  - 사용 가능 변수: 
+    - `username`: 채널 사용자명
+    - `stream_started`: 방송 시작 시각
+    - `record_started`: 녹화 시작 시각
+    - `escaped_title`: 녹화 시작 시점의 방송 제목
+* `vod_name_format`: VOD 다운로드 파일명 포맷 
+  - 기본값: `[{username}]{stream_started}_{escaped_title}.ts`
+  - 사용 가능 변수: 
+    - `username`: 채널 사용자명
+    - `stream_started`: 방송 시작 시각
+    - `download_started`: 다운로드 시작 시각
+    - `uploaded`: 업로드 시각
+    - `escaped_title`: 다시보기 제목
+* `time_format`: 파일명에 사용할 시간 포맷 
+  - 기본값: `%y-%m-%d %H_%M_%S`
+* `msg_time_format`: 디스코드 알림에 사용할 시간 포맷 
+  - 기본값: `%Y년 %m월 %d일 %H시 %M분 %S초`
+* `fallback_to_current_dir`: 저장 디렉토리를 사용할 수 없을 때 프로그램 디렉토리에 녹화 파일 저장 
+  - 기본값: `true`
+* `mount_command`: 저장 디렉토리를 사용할 수 없을 때 실행할 명령어 
+  - 기본값: 없음
+* `interval`: 방송 중 채널 확인 주기 (초 단위)
+  - 기본값: 10
+* `use_discord_bot`: 디스코드 봇 사용 여부 
+  - 기본값: `false`
+* `zmq_port`: 메인 프로세스와 디스코드 봇 간 통신을 위한 시작포트 
+  - 기본값: `5555`
+* `discord_bot_token`: 디스코드 봇 토큰 
+  - 기본값: 없음 (디스코드 봇 사용시 필수)
+* `target_user_id`: 자신의 디스코드 유저 ID
+  - 기본값: 없음 (디스코드 봇 사용시 필수)
+

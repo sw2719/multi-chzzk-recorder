@@ -167,15 +167,21 @@ class DiscordBot(commands.Bot):
             title = data['title']
             message = data['message']
             embed = ds.Embed(title=title, description=message)
+
+            embed.set_author(name='치지직 레코더',
+                             icon_url='https://ssl.pstatic.net/static/nng/glive/icon/favicon.png')
         elif data['type'] == 'embed':
             if 'color' not in data['contents']:
                 data['contents']['color'] = 0x73F8AA
+            if 'author' not in data['contents']:
+                data['contents']['author'] = {
+                    'name': '치지직 레코더',
+                    'icon_url': 'https://ssl.pstatic.net/static/nng/glive/icon/favicon.png'
+                }
             embed = ds.Embed.from_dict(data['contents'])
         else:
             embed = ds.Embed(title='오류', description='올바르지 않은 응답입니다.')
 
-        embed.set_author(name='치지직 레코더',
-                         icon_url='https://ssl.pstatic.net/static/nng/glive/icon/favicon.png')
         await ctx.send(embed=embed)
 
     async def send_message(self, embed):
