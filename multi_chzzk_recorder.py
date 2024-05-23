@@ -503,12 +503,11 @@ class MultiChzzkRecorder:
                         try:
                             rec_file_path = self.recorder_processes[channel_id]['path']
                             readable_size = self.get_readable_file_size(os.path.getsize(rec_file_path))
-                            username = self.record_dict[channel_id]['channelName']
 
                             self.send_embed(
                                 title="녹화 종료됨",
-                                description=f"채널 `{username}`의 녹화가 끝났습니다.",
-                                author={"name": username, "icon_url": self.record_dict[channel_id]["channelImageUrl"]},
+                                description=f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
+                                thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
                                 fields=[
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
                                     {"name": "파일 크기", "value": readable_size, "inline": False}
@@ -573,8 +572,7 @@ class MultiChzzkRecorder:
                         self.send_embed(
                             title="녹화 시작됨",
                             description=f"채널 `{username}`의 녹화를 시작합니다.",
-                            thumbnail={"url": stream_data["thumbnailImageUrl"]},
-                            author={"name": username, "icon_url": self.record_dict[channel_id]["channelImageUrl"]},
+                            thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
                             fields=[
                                 {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
                                 {"name": "방송 시작", "value": record_started_time_str, "inline": False},
