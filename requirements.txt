@@ -3,3 +3,4 @@ disnake
 pyzmq
 requests
 packaging
+fake-useragent
