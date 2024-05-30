@@ -8,18 +8,35 @@ import sys
 import argparse
 import time
 import threading
-import traceback
 import shlex
 import atexit
-from packaging import version
-from typing import Dict, Any
 
 import requests
 import zmq
 
+from typing import Dict, TypedDict, Union
+from packaging import version
+
 from api.chzzk import ChzzkAPI
 
 STREAMLINK_MIN_VERSION = "6.7.4"
+
+DEFAULT_CFG = {
+    'nid_aut': '',
+    'nid_ses': '',
+    'quality': 'best',
+    'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+    'time_format': '%y-%m-%d %H_%M_%S',
+    'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
+    'recording_save_root_dir': '',
+    'fallback_to_current_dir': True,
+    'mount_command': '',
+    'interval': 10,
+    'use_discord_bot': False,
+    'zmq_port': 5555,
+    'discord_bot_token': '',
+    'target_user_id': ''
+}
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -39,7 +56,7 @@ def truncate_long_name(s: str) -> str:
 
 
 def check_streamlink() -> bool:
-    """check if streamlink >= 5.0 is installed"""
+    """Check if streamlink is installed and is of the required version."""
     try:
         ret = subprocess.check_output(["streamlink", "--version"], universal_newlines=True)
         re_ver = re.search(r"streamlink (\d+)\.(\d+)\.(\d+)", ret, flags=re.IGNORECASE)
@@ -54,12 +71,14 @@ def check_streamlink() -> bool:
         sys.exit(1)
 
 
-class MultiChzzkRecorder:
-    def __init__(self, quality: str, cfg: dict) -> None:
-        logger.info("Initializing Multi Chzzk Recorder...")
+class RecorderProcess(TypedDict):
+    recorder: Union[None, subprocess.Popen]
+    path: Union[None, str]
 
-        ret = subprocess.check_output(["streamlink", "--plugins"], universal_newlines=True)
-        installed_plugins = ret.split(': ')[-1].split(', ')
+
+class MultiChzzkRecorder:
+    def __init__(self, cfg: dict) -> None:
+        logger.info("Initializing Multi Chzzk Recorder...")
 
         if not check_streamlink():
             logger.error("streamlink 6.7.4 or newer is required. Please update streamlink.")
@@ -69,7 +88,7 @@ class MultiChzzkRecorder:
         self.record_dict = {}
         self.discord_process = None
 
-        self.FFMPEG = "ffmpeg"
+        self.quality = cfg['quality']
         self.INTERVAL = cfg["interval"]
         self.ROOT_PATH = cfg['recording_save_root_dir']
         self.NID_AUT = cfg['nid_aut']
@@ -88,7 +107,6 @@ class MultiChzzkRecorder:
             open('record_list.txt', 'w').close()
             channel_ids = []
 
-        self.quality = quality
         logger.info(f'Quality set to: {self.quality}')
         self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
 
@@ -109,9 +127,9 @@ class MultiChzzkRecorder:
                     logger.error(f'Failed to get channel {channel_id}. Retrying in 5 seconds...')
                     time.sleep(5)
 
-        self.recorder_processes = {}
+        self.recorder_processes: Dict[str, RecorderProcess] = {}
         for channel_id in self.record_dict:
-            self.recorder_processes[channel_id] = {
+            self.recorder_processes[channel_id]: RecorderProcess = {
                 'recorder': None,
                 'path': None
             }
@@ -132,17 +150,17 @@ class MultiChzzkRecorder:
 
         streamers_list_str = '\n'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
 
-        self.send_embed({
-            "title": "치지직 레코더 시작됨",
-            "description": f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
-            "fields": [
+        self.send_embed(
+            title="치지직 레코더 시작됨",
+            description=f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
+            fields=[
                 {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}", "inline": False},
                 {"name": "저장 디렉토리", "value": f"`{self.ROOT_PATH}`", "inline": False},
                 {"name": "확인 주기", "value": f"{self.INTERVAL}초", "inline": False},
                 {"name": "마운트 명령어", "value": self.MNT_CMD if self.MNT_CMD else '사용 안함', "inline": False},
                 {"name": "fallback 디렉토리 사용", "value": '예' if self.FALLBACK else '아니오', "inline": False}
             ]
-        })
+        )
 
         self.loop_running = False
 
@@ -153,10 +171,10 @@ class MultiChzzkRecorder:
 
         logger.info('Starting discord bot..')
         self.discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
-                                                "-t", token,
-                                                "-u", user_id,
-                                                "-p", str(port),
-                                                "-i", str(self.INTERVAL)])
+                                                 "-t", token,
+                                                 "-u", user_id,
+                                                 "-p", str(port),
+                                                 "-i", str(self.INTERVAL)])
 
         logger.info("Connecting to discord bot...")
 
@@ -200,21 +218,32 @@ class MultiChzzkRecorder:
                 'message': message
             })
 
-    def send_embed(self, contents: Dict[str, Any], socket=None) -> None:
+    def send_embed(self, title: str, description: str, socket=None, **kwargs) -> None:
         """Send an embed message to the discord bot.
-        :param contents: Embed contents.
-        Supported keys: title, type, description, url, timestamp, color, fields, thumbnail, image, footer, provider
+        :param title: Title of the embed message.
+        :param description: Description of the embed message.
+        :param socket: ZMQ socket to send the message to. If None, the default socket will be used if available.
+        :param kwargs: Additional fields for the embed message.
+        Available fields: url, timestamp, color, fields, thumbnail, image, footer, provider
+        """
 
-        :param socket: ZMQ socket to send the message to. If None, the default socket will be used if available."""
         if socket is None and self.socket:
             self.socket.send_json({
                 'type': 'embed',
-                'contents': contents
+                'contents': {
+                    "title": title,
+                    "description": description,
+                    **kwargs
+                }
             })
         elif socket:
             socket.send_json({
                 'type': 'embed',
-                'contents': contents
+                'contents': {
+                    "title": title,
+                    "description": description,
+                    **kwargs
+                }
             })
 
     def send_alive(self, socket=None) -> None:
@@ -272,7 +301,7 @@ class MultiChzzkRecorder:
         while True:
             if not self.loop_running:
                 self.record_dict[channel_id] = channel_data
-                self.recorder_processes[channel_id] = {
+                self.recorder_processes[channel_id]: RecorderProcess = {
                     'recorder': None,
                     'path': None
                 }
@@ -304,6 +333,7 @@ class MultiChzzkRecorder:
                 if self.recorder_processes[channel_id]['recorder'] is not None:
                     self.recorder_processes[channel_id]['recorder'].terminate()
                     self.recorder_processes[channel_id]['recorder'].wait()
+                    self.recording_count -= 1
 
                 del self.recorder_processes[channel_id]
                 break
@@ -372,43 +402,60 @@ class MultiChzzkRecorder:
         return rec_file_path
 
     def download_vod(self, url: str, quality: str):
-        def on_streamlink_exit(return_code):
-            if return_code == 0:
-                self.send_message('다운로드 성공', f'`{url}` 의 다운로드가 완료되었습니다.', socket=self.socket)
-            else:
-                self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
+        now = datetime.datetime.now()
+        video_data = self.chzzk.get_video(url)
+
+        if video_data is None:
+            self.send_message('다운로드 실패',
+                              f'`{url}`의 정보를 가져오는 데 실패했습니다.\n올바른 URL인지 확인하세요.',
+                              socket=self.command_socket)
+            return
 
         if not quality:
             quality = self.quality
+
+        username = video_data['channel']["channelName"]
+        video_title = video_data["videoTitle"]
+        stream_started_time = datetime.datetime.strptime(video_data["liveOpenDate"], '%Y-%m-%d %H:%M:%S')
+        uploaded_time = datetime.datetime.strptime(video_data["publishDate"], '%Y-%m-%d %H:%M:%S')
+
+        video_duration = datetime.timedelta(seconds=video_data["duration"])
+
+        _data = {
+            "username": username,
+            "escaped_title": truncate_long_name(escape_filename(video_title)),
+            "stream_started": stream_started_time.strftime(self.TIME_FORMAT),
+            "uploaded": uploaded_time.strftime(self.TIME_FORMAT),
+            "download_started": now.strftime(self.TIME_FORMAT)
+        }
+        file_name = str(self.FILE_NAME_FORMAT.format(**_data))
+        rec_file_path = self.get_file_path(username, file_name, is_vod=True)
+
+        def on_streamlink_exit(return_code):
+            nonlocal video_data
+            nonlocal rec_file_path
+            nonlocal now
+
+            if return_code == 0:
+                completed_time = datetime.datetime.now()
+                elapsed_time = completed_time - now
+
+                self.send_embed('다운로드 성공',
+                                f'`{video_data["videoTitle"]}`의 다운로드가 완료되었습니다.',
+                                fields=[
+                                    {"name": "파일 크기", "value": self.get_readable_file_size(os.path.getsize(rec_file_path)), "inline": False},
+                                    {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False},
+                                    {"name": "소요 시간", "value": f"{str(elapsed_time)}", "inline": False}
+                                ],
+                                socket=self.command_socket)
+            else:
+                self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
 
         def start_dl(on_exit, popen_args):
             proc = subprocess.Popen(popen_args)
             proc.wait()
             on_exit(proc.returncode)
             return
-
-        now = datetime.datetime.now()
-        video_data = self.chzzk.get_video(url)
-
-        if video_data is None:
-            self.send_message('다운로드 실패',
-                              f'`{url}` 의 정보를 가져오는 데 실패했습니다.\n올바른 URL인지 확인하세요.', socket=self.command_socket)
-            return
-
-        username = video_data['channel']["channelName"]
-        video_title = video_data["videoTitle"]
-        stream_started_time = datetime.datetime.strptime(video_data["liveOpenDate"], '%Y-%m-%d %H:%M:%S')
-
-        _data = {
-            "username": username,
-            "escaped_title": truncate_long_name(escape_filename(video_title)),
-            "stream_started": stream_started_time.strftime(self.TIME_FORMAT),
-            "record_started": now.strftime(self.TIME_FORMAT)
-        }
-        file_name = str(self.FILE_NAME_FORMAT.format(**_data))
-        rec_file_path = self.get_file_path(username, file_name, is_vod=True)
-
-        logger.info(f"Downloading {url} at {rec_file_path}")
 
         command_string = 'streamlink ' \
                          f'{url} ' \
@@ -419,21 +466,24 @@ class MultiChzzkRecorder:
 
         command = shlex.split(command_string)
 
+        logger.info(f"Downloading {url} at {rec_file_path}")
         thread = threading.Thread(target=start_dl, args=(on_streamlink_exit, command))
         thread.start()
 
-        self.send_embed({
-            "title": "다운로드 시작됨",
-            "description": f"VOD 다운로드 중...",
-            "thumbnail": {
-                "url": video_data['thumbnailImageUrl']
-            },
-            "fields": [
+        self.send_embed(
+            title="다운로드 시작됨",
+            description=f"VOD 다운로드 중...",
+            thumbnail={"url": video_data['thumbnailImageUrl']},
+            fields=[
                 {"name": "제목", "value": f"`{video_title}`", "inline": False},
                 {"name": "방송 시작", "value": f"`{stream_started_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                {"name": "업로드", "value": f"`{uploaded_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                {"name": "길이", "value": f"{str(video_duration)}`", "inline": False},
+                {"name": "품질", "value": f"`{'최고 품질' if quality == 'best' else quality}`", "inline": False},
                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
-            ]
-        }, socket=self.command_socket)
+            ],
+            socket=self.command_socket
+        )
 
         return
 
@@ -452,31 +502,17 @@ class MultiChzzkRecorder:
 
                         try:
                             rec_file_path = self.recorder_processes[channel_id]['path']
-                            file_size = os.path.getsize(rec_file_path)
+                            readable_size = self.get_readable_file_size(os.path.getsize(rec_file_path))
 
-                            # human-readable file size
-                            # initial size is in bytes
-                            if file_size > 1024 ** 3:  # Over 1GB
-                                readable_size = f"{file_size / (1024 ** 3):.1f} GB"
-                            elif file_size > 1024 ** 2:  # Over 1MB
-                                readable_size = f"{file_size / (1024 ** 2):.1f} MB"
-                            elif file_size > 1024:  # Over 1KB
-                                readable_size = f"{file_size / 1024:.1f} KB"
-                            else:  # Less than 1KB
-                                readable_size = f"{file_size} Bytes"
-
-                            self.send_embed({
-                                "title": "녹화 종료됨",
-                                "description": f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
-                                "thumbnail": {
-                                    "url": self.record_dict[channel_id]['channelImageUrl']
-                                },
-                                "fields": [
+                            self.send_embed(
+                                title="녹화 종료됨",
+                                description=f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
+                                thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                                fields=[
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
                                     {"name": "파일 크기", "value": readable_size, "inline": False}
                                 ]
-
-                            })
+                            )
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
@@ -504,8 +540,6 @@ class MultiChzzkRecorder:
                             "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
                             "stream_started": datetime.datetime.strptime(
                                 stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
-                            "stream_started_msg": datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT),
                             "record_started": now.strftime(self.TIME_FORMAT)
                         }
                         file_name = self.FILE_NAME_FORMAT.format(**_data)
@@ -533,19 +567,19 @@ class MultiChzzkRecorder:
 
                         self.recording_count += 1
 
-                        self.send_embed({
-                            "title": "녹화 시작됨",
-                            "description": f"채널 `{username}`의 녹화를 시작합니다.",
-                            "thumbnail": {
-                                "url": self.record_dict[channel_id]['channelImageUrl']
-                            },
-                            "fields": [
+                        record_started_time_str = datetime.datetime.strptime(
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
+                        self.send_embed(
+                            title="녹화 시작됨",
+                            description=f"채널 `{username}`의 녹화를 시작합니다.",
+                            thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                            fields=[
                                 {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
-                                {"name": "방송 시작", "value": f"`{_data['stream_started_msg']}`", "inline": False},
-                                {"name": "녹화 시작", "value": f"`{now.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
+                                {"name": "방송 시작", "value": record_started_time_str, "inline": False},
+                                {"name": "녹화 시작", "value": now.strftime(self.MSG_TIME_FORMAT), "inline": False},
                                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
                             ]
-                        })
+                        )
                         message_sent = True
 
                     elif not is_streaming:
@@ -573,10 +607,24 @@ class MultiChzzkRecorder:
 
         logger.info("Exiting...")
 
+    @staticmethod
+    def get_readable_file_size(size_in_bytes) -> str:
+        # human-readable file size
+        # initial size is in bytes
+        if size_in_bytes > 1024 ** 3:  # Over 1GB
+            readable_size = f"{size_in_bytes / (1024 ** 3):.1f} GB"
+        elif size_in_bytes > 1024 ** 2:  # Over 1MB
+            readable_size = f"{size_in_bytes / (1024 ** 2):.1f} MB"
+        elif size_in_bytes > 1024:  # Over 1KB
+            readable_size = f"{size_in_bytes / 1024:.1f} KB"
+        else:  # Less than 1KB
+            readable_size = f"{size_in_bytes} Bytes"
+
+        return readable_size
+
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-q", "--quality", default="best")
     parser.add_argument("-l", "--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     args = parser.parse_args()
 
@@ -589,10 +637,12 @@ def main():
             cfg = {
                 'nid_aut': '',
                 'nid_ses': '',
+                'recording_save_root_dir': '',
+                'quality': 'best',
                 'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+                'vod_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
                 'time_format': '%y-%m-%d %H_%M_%S',
                 'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
-                'recording_save_root_dir': '',
                 'fallback_to_current_dir': True,
                 'mount_command': '',
                 'interval': 10,
@@ -607,7 +657,23 @@ def main():
             sys.exit(0)
     else:
         with open('config.json', 'r') as f:
-            cfg = json.load(f)
+            temp_cfg = json.load(f)
+            cfg = {}
+
+        cfg_update_required = False
+
+        for key in DEFAULT_CFG.keys():
+            if key not in temp_cfg:
+                cfg[key] = DEFAULT_CFG[key]
+                logger.info(f'Adding missing config key: {key}')
+                cfg_update_required = True
+            else:
+                cfg[key] = temp_cfg[key]
+
+        if cfg_update_required:
+            with open('config.json', 'w') as f:
+                json.dump(cfg, f, indent=4)
+                logger.info('Updated config file with new settings.')
 
     if os.path.isdir(cfg['recording_save_root_dir']):
         logger.info(f"Save directory set to: {cfg['recording_save_root_dir']}")
@@ -619,7 +685,7 @@ def main():
         logger.info("Fallback to current directory is enabled.")
         logger.info("If save directory is offline or unreachable, recordings will be saved to current directory instead.")
 
-    recorder = MultiChzzkRecorder(args.quality, cfg)
+    recorder = MultiChzzkRecorder(cfg)
     atexit.register(recorder.cleanup)
     recorder.loop()
 

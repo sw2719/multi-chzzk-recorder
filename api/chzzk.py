@@ -1,11 +1,9 @@
-from pprint import pprint
-
 import requests
 import json
 import logging
 import re
 
-from typing import Union, Dict
+from typing import Union, Dict, TypedDict
 from fake_useragent import UserAgent
 
 REQUEST_TIMEOUT = 15
@@ -14,11 +12,34 @@ request_header = {"User-Agent": ua.chrome}
 logger = logging.getLogger(__name__)
 
 
+class ChzzkChannel(TypedDict):
+    channelId: str
+    channelName: str
+    channelImageUrl: str
+    openLive: bool
+
+
+class ChzzkStream(TypedDict):
+    liveTitle: str
+    liveImageUrl: str
+    openDate: str
+    adult: bool
+
+
+class ChzzkVideo(TypedDict):
+    videoTitle: str
+    publishDate: str
+    thumbnailImageUrl: str
+    duration: int
+    channel: Dict[str, Union[str, bool]]
+    liveOpenDate: str
+
+
 class ChzzkAPI:
     def __init__(self, nid_aut: str, nid_ses: str):
         self._cookies = {'NID_AUT': nid_aut, 'NID_SES': nid_ses}
 
-    def get_channel_info(self, channel_id: str) -> Union[Dict, None]:
+    def get_channel_info(self, channel_id: str) -> Union[ChzzkChannel, None]:
         """Get channel info from chzzk API.
         :param channel_id: Channel ID.
         :return: Channel info dict if channel exists, None otherwise."""
@@ -37,7 +58,7 @@ class ChzzkAPI:
                 logger.error(f'Timeout while getting channel {channel_id}')
                 return None
 
-    def check_live(self, channel_id: str) -> (bool, dict | None):
+    def check_live(self, channel_id: str) -> (bool, Union[ChzzkStream, None]):
         with requests.get(f'https://api.chzzk.naver.com/service/v1/channels/{channel_id}/live-detail',
                           headers=request_header, cookies=self._cookies, timeout=REQUEST_TIMEOUT) as r:
             try:
@@ -53,7 +74,7 @@ class ChzzkAPI:
             data = json.loads(r.text)
             return data['content']['status'] == 'OPEN', data['content']
 
-    def get_video(self, video_url: str) -> (dict | None):
+    def get_video(self, video_url: str) -> Union[ChzzkVideo, None]:
         match = re.match(r'https://chzzk.naver.com/video/(\d+)', video_url)
 
         if not match:
