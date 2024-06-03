@@ -24,11 +24,13 @@ STREAMLINK_MIN_VERSION = "6.7.4"
 DEFAULT_CFG = {
     'nid_aut': '',
     'nid_ses': '',
+    'recording_save_root_dir': '',
     'quality': 'best',
+    'record_chat': False,
     'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+    'vod_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
     'time_format': '%y-%m-%d %H_%M_%S',
     'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
-    'recording_save_root_dir': '',
     'fallback_to_current_dir': True,
     'mount_command': '',
     'interval': 10,
@@ -74,6 +76,7 @@ def check_streamlink() -> bool:
 class RecorderProcess(TypedDict):
     recorder: Union[None, subprocess.Popen]
     path: Union[None, str]
+    chat_recorder: Union[None, subprocess.Popen]
 
 
 class MultiChzzkRecorder:
@@ -91,6 +94,7 @@ class MultiChzzkRecorder:
         self.quality = cfg['quality']
         self.INTERVAL = cfg["interval"]
         self.ROOT_PATH = cfg['recording_save_root_dir']
+        self.CHAT = cfg['record_chat']
         self.NID_AUT = cfg['nid_aut']
         self.NID_SES = cfg['nid_ses']
         self.MNT_CMD = cfg['mount_command']
@@ -106,6 +110,11 @@ class MultiChzzkRecorder:
         except FileNotFoundError:
             open('record_list.txt', 'w').close()
             channel_ids = []
+
+        if self.CHAT:
+            with open('./ChzzkChat/cookies.json', 'w') as f:
+                json.dump({'NID_AUT': self.NID_AUT, 'NID_SES': self.NID_SES}, f, indent=2)
+                logger.info('Chat recording enabled.')
 
         logger.info(f'Quality set to: {self.quality}')
         self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
@@ -131,7 +140,8 @@ class MultiChzzkRecorder:
         for channel_id in self.record_dict:
             self.recorder_processes[channel_id]: RecorderProcess = {
                 'recorder': None,
-                'path': None
+                'path': None,
+                'chat_recorder': None
             }
 
         if self.INTERVAL < 5:
@@ -142,23 +152,28 @@ class MultiChzzkRecorder:
         self.socket = None
         self.command_socket = None
         if cfg['use_discord_bot']:
-            self.socket, self.command_socket = self.init_discord_bot(cfg['discord_bot_token'], cfg['target_user_id'], cfg['zmq_port'])
+            self.socket, self.command_socket = self.init_discord_bot(cfg['discord_bot_token'], cfg['target_user_id'],
+                                                                     cfg['zmq_port'])
             logger.info('Got socket')
 
             self.poll_thread = threading.Thread(target=self.poll_command, daemon=True)
             self.poll_thread.start()
 
-        streamers_list_str = '\n'.join([f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
+        streamers_list_str = '\n'.join(
+            [f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
+             self.record_dict.items()])
 
         self.send_embed(
             title="치지직 레코더 시작됨",
             description=f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
             fields=[
-                {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}", "inline": False},
+                {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}",
+                 "inline": False},
                 {"name": "저장 디렉토리", "value": f"`{self.ROOT_PATH}`", "inline": False},
                 {"name": "확인 주기", "value": f"{self.INTERVAL}초", "inline": False},
                 {"name": "마운트 명령어", "value": self.MNT_CMD if self.MNT_CMD else '사용 안함', "inline": False},
-                {"name": "fallback 디렉토리 사용", "value": '예' if self.FALLBACK else '아니오', "inline": False}
+                {"name": "fallback 디렉토리 사용", "value": '예' if self.FALLBACK else '아니오', "inline": False},
+                {"name": "채팅 기록", "value": '예' if self.CHAT else '아니오', "inline": False}
             ]
         )
 
@@ -280,8 +295,10 @@ class MultiChzzkRecorder:
 
     def send_list(self):
         streamers_list_str = '\n'.join(
-            [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id]['recorder'] is not None
-             else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in self.record_dict.items()])
+            [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id][
+                                                                            'recorder'] is not None
+             else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
+             self.record_dict.items()])
         self.send_message("녹화 채널 목록",
                           f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
                           f"{streamers_list_str}", socket=self.command_socket)
@@ -323,7 +340,7 @@ class MultiChzzkRecorder:
     def remove_streamer(self, channel_id: str):
         if channel_id not in self.record_dict:
             self.send_message('제거 실패', f"채널 ID `{channel_id}`는 추가된 채널이 아닙니다.\n"
-                              f"',list' 명령어로 추가된 채널 ID를 확인하세요.", socket=self.command_socket)
+                                       f"',list' 명령어로 추가된 채널 ID를 확인하세요.", socket=self.command_socket)
             return
 
         while True:
@@ -340,7 +357,8 @@ class MultiChzzkRecorder:
 
         self.save_record_dict()
 
-        self.send_message("제거 성공", f"채널 `{removed_channel_data['channelName']} ({channel_id})`을/를 녹화 목록에서 제거했습니다.", socket=self.command_socket)
+        self.send_message("제거 성공", f"채널 `{removed_channel_data['channelName']} ({channel_id})`을/를 녹화 목록에서 제거했습니다.",
+                          socket=self.command_socket)
 
         logger.info(f'Removed {channel_id} from record dict')
 
@@ -443,7 +461,9 @@ class MultiChzzkRecorder:
                 self.send_embed('다운로드 성공',
                                 f'`{video_data["videoTitle"]}`의 다운로드가 완료되었습니다.',
                                 fields=[
-                                    {"name": "파일 크기", "value": self.get_readable_file_size(os.path.getsize(rec_file_path)), "inline": False},
+                                    {"name": "파일 크기",
+                                     "value": self.get_readable_file_size(os.path.getsize(rec_file_path)),
+                                     "inline": False},
                                     {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False},
                                     {"name": "소요 시간", "value": f"{str(elapsed_time)}", "inline": False}
                                 ],
@@ -509,7 +529,8 @@ class MultiChzzkRecorder:
                                 description=f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
                                 thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
                                 fields=[
-                                    {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`", "inline": False},
+                                    {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`",
+                                     "inline": False},
                                     {"name": "파일 크기", "value": readable_size, "inline": False}
                                 ]
                             )
@@ -523,6 +544,11 @@ class MultiChzzkRecorder:
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
                         self.recorder_processes[channel_id]['path'] = None
+
+                        if self.recorder_processes[channel_id]['chat_recorder'] is not None:
+                            self.recorder_processes[channel_id]['chat_recorder'].terminate()
+                            self.recorder_processes[channel_id]['chat_recorder'].wait()
+                            self.recorder_processes[channel_id]['chat_recorder'] = None
 
                         self.recording_count -= 1
 
@@ -565,10 +591,19 @@ class MultiChzzkRecorder:
                         self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
                         self.recorder_processes[channel_id]['path'] = rec_file_path
 
+                        if self.CHAT:
+                            chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
+                            self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
+                                ["python3", "ChzzkChat/run.py",
+                                 "--streamer_id", channel_id,
+                                 "--file_path", chat_file_path,
+                                 "--start_time", now.timestamp()]
+                            )
+
                         self.recording_count += 1
 
                         record_started_time_str = datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
+                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
                         self.send_embed(
                             title="녹화 시작됨",
                             description=f"채널 `{username}`의 녹화를 시작합니다.",
@@ -634,25 +669,7 @@ def main():
     if not os.path.isfile('config.json'):
         logger.warning('config.json not found!')
         with open('config.json', 'w') as f:
-            cfg = {
-                'nid_aut': '',
-                'nid_ses': '',
-                'recording_save_root_dir': '',
-                'quality': 'best',
-                'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
-                'vod_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
-                'time_format': '%y-%m-%d %H_%M_%S',
-                'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
-                'fallback_to_current_dir': True,
-                'mount_command': '',
-                'interval': 10,
-                'use_discord_bot': False,
-                'zmq_port': 5555,
-                'discord_bot_token': '',
-                'target_user_id': ''
-            }
-
-            json.dump(cfg, f, indent=4)
+            json.dump(DEFAULT_CFG, f, indent=4)
             logger.info('Created default config file. Review and edit settings as required. Exiting...')
             sys.exit(0)
     else:
@@ -683,7 +700,8 @@ def main():
 
     if cfg['fallback_to_current_dir']:
         logger.info("Fallback to current directory is enabled.")
-        logger.info("If save directory is offline or unreachable, recordings will be saved to current directory instead.")
+        logger.info(
+            "If save directory is offline or unreachable, recordings will be saved to current directory instead.")
 
     recorder = MultiChzzkRecorder(cfg)
     atexit.register(recorder.cleanup)
