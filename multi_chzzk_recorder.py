@@ -112,9 +112,7 @@ class MultiChzzkRecorder:
             channel_ids = []
 
         if self.CHAT:
-            with open('./ChzzkChat/cookies.json', 'w') as f:
-                json.dump({'NID_AUT': self.NID_AUT, 'NID_SES': self.NID_SES}, f, indent=2)
-                logger.info('Chat recording enabled.')
+            logger.info('Chat recording enabled.')
 
         logger.info(f'Quality set to: {self.quality}')
         self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
@@ -595,9 +593,11 @@ class MultiChzzkRecorder:
                             chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
                             self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
                                 ["python3", "ChzzkChat/run.py",
+                                 "--nid_ses", self.NID_SES,
+                                 "--nid_aut", self.NID_AUT,
                                  "--streamer_id", channel_id,
                                  "--file_path", chat_file_path,
-                                 "--start_time", now.timestamp()]
+                                 "--start_time", str(now.timestamp())]
                             )
 
                         self.recording_count += 1
