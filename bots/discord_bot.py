@@ -87,15 +87,29 @@ class DiscordBot(commands.Bot):
             await asyncio.sleep(1)
 
     def add_commands(self):
-        # Work in progress
         @self.command()
         async def add(ctx, user_input: str = ''):
             user_input = user_input.strip()
 
-            if user_input.startswith('https://chzzk.naver.com/'):
-                channel_id = user_input.split('/')[-1]
-            else:
-                channel_id = user_input
+            if self.command_busy:
+                await ctx.send('다른 명령이 이미 실행 중입니다.')
+                return
+            elif not user_input:
+                await ctx.send('치지직 채널명을 입력해야 합니다.')
+                return
+
+            self.command_busy = True
+            self.command_socket.send_json({'type': 'add',
+                                           'add_by_name': True,
+                                           'channel': user_input})
+
+            await self.send_result_after_command(ctx)
+            self.command_busy = False
+
+        # Work in progress
+        @self.command()
+        async def add_id(ctx, user_input: str = ''):
+            user_input = user_input.strip()
 
             if self.command_busy:
                 await ctx.send('다른 명령이 이미 실행 중입니다.')
@@ -104,9 +118,15 @@ class DiscordBot(commands.Bot):
                 await ctx.send('치지직 채널 링크 또는 채널 ID를 입력해야 합니다.')
                 return
 
+            if user_input.startswith('https://chzzk.naver.com/'):
+                channel_id = user_input.split('/')[-1]
+            else:
+                channel_id = user_input
+
             self.command_busy = True
             self.command_socket.send_json({'type': 'add',
-                                           'channel_id': channel_id})
+                                           'add_by_name': False,
+                                           'channel': channel_id})
 
             await self.send_result_after_command(ctx)
             self.command_busy = False

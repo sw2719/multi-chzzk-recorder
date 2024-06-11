@@ -273,39 +273,47 @@ class MultiChzzkRecorder:
         logger.info('Command poller started.')
         while True:
             try:
-                data = self.command_socket.recv_json(flags=zmq.NOBLOCK)
-                logger.info(f'Got command: {data}')
+                command_data = self.command_socket.recv_json(flags=zmq.NOBLOCK)
+                logger.info(f'Got command: {command_data}')
 
-                if data['type'] == 'add':
-                    self.add_streamer(data['channel_id'])
-                elif data['type'] == 'remove':
-                    self.remove_streamer(data['channel_id'])
-                elif data['type'] == 'list':
+                if command_data['type'] == 'add':
+                    self.add_streamer(command_data['channel'], command_data['add_by_name'])
+                elif command_data['type'] == 'remove':
+                    self.remove_streamer(command_data['channel_id'])
+                elif command_data['type'] == 'list':
                     self.send_list()
-                elif data['type'] == 'dl':
-                    self.download_vod(data['url'], data['quality'])
+                elif command_data['type'] == 'dl':
+                    self.download_vod(command_data['url'], command_data['quality'])
                 else:
-                    logger.error(f'Unknown command type: {data["type"]}')
+                    logger.error(f'Unknown command type: {command_data["type"]}')
 
             except zmq.ZMQError:
                 pass
             time.sleep(1)
 
     def send_list(self):
-        streamers_list_str = '\n'.join(
-            [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id][
-                                                                            'recorder'] is not None
-             else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
-             self.record_dict.items()])
-        self.send_message("녹화 채널 목록",
-                          f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
-                          f"{streamers_list_str}", socket=self.command_socket)
+        if self.record_dict:
+            streamers_list_str = '\n'.join(
+                [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id][
+                                                                                'recorder'] is not None
+                 else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
+                 self.record_dict.items()])
+            self.send_message("녹화 채널 목록",
+                              f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
+                              f"{streamers_list_str}", socket=self.command_socket)
+        else:
+            self.send_message("녹화 채널 목록", "녹화 중인 채널이 없습니다.", socket=self.command_socket)
 
     def save_record_dict(self):
         with open('record_list.txt', 'w') as f:
             f.write('\n'.join(self.record_dict.keys()))
 
-    def add_streamer(self, channel_id: str):
+    def add_streamer(self, channel: str, add_by_name: bool):
+        if add_by_name:
+            channel_id = self.chzzk.get_channel_id(channel)
+        else:
+            channel_id = channel
+
         if channel_id in self.record_dict:
             self.send_message('추가 실패', f"채널 ID `{channel_id}` 는 이미 추가되어 있습니다.", socket=self.command_socket)
             return
@@ -333,7 +341,7 @@ class MultiChzzkRecorder:
 
         self.send_message("채널 추가됨", f"채널 `{username} ({channel_id})`을/를 녹화 목록에 추가했습니다.", socket=self.command_socket)
 
-        logger.info(f'Added {channel_id} to record dict')
+        logger.info(f'Added {channel_id}')
 
     def remove_streamer(self, channel_id: str):
         if channel_id not in self.record_dict:
@@ -358,7 +366,7 @@ class MultiChzzkRecorder:
         self.send_message("제거 성공", f"채널 `{removed_channel_data['channelName']} ({channel_id})`을/를 녹화 목록에서 제거했습니다.",
                           socket=self.command_socket)
 
-        logger.info(f'Removed {channel_id} from record dict')
+        logger.info(f'Removed {channel_id}')
 
     def get_file_path(self, username: str, file_name: str, is_vod=False):
         if is_vod:
