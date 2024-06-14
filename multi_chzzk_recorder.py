@@ -558,77 +558,78 @@ class MultiChzzkRecorder:
 
                         self.recording_count -= 1
 
-                try:
-                    username = self.record_dict[channel_id]["channelName"]
-                    is_streaming, stream_data = self.chzzk.check_live(channel_id)
-                    if is_streaming is None:
-                        self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
-                        message_sent = True
-                    elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
-                        logger.info(f"{channel_id} is online. Starting recording...")
-                        now = datetime.datetime.now()
-                        _data = {
-                            "username": self.record_dict[channel_id]["channelName"],
-                            "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
-                            "stream_started": datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
-                            "record_started": now.strftime(self.TIME_FORMAT)
-                        }
-                        file_name = self.FILE_NAME_FORMAT.format(**_data)
+                else:
+                    try:
+                        username = self.record_dict[channel_id]["channelName"]
+                        is_streaming, stream_data = self.chzzk.check_live(channel_id)
+                        if is_streaming is None:
+                            self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
+                            message_sent = True
+                        elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
+                            logger.info(f"{channel_id} is online. Starting recording...")
+                            now = datetime.datetime.now()
+                            _data = {
+                                "username": self.record_dict[channel_id]["channelName"],
+                                "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
+                                "stream_started": datetime.datetime.strptime(
+                                    stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
+                                "record_started": now.strftime(self.TIME_FORMAT)
+                            }
+                            file_name = self.FILE_NAME_FORMAT.format(**_data)
 
-                        rec_file_path = self.get_file_path(username, file_name)
+                            rec_file_path = self.get_file_path(username, file_name)
 
-                        if rec_file_path is None:
-                            continue
+                            if rec_file_path is None:
+                                continue
 
-                        # start streamlink process
-                        logger.info("Recorded video will be saved at %s", rec_file_path)
+                            # start streamlink process
+                            logger.info("Recorded video will be saved at %s", rec_file_path)
 
-                        command_string = 'streamlink ' \
-                                         f'https://chzzk.naver.com/live/{channel_id} ' \
-                                         f'{self.quality} ' \
-                                         f'-o "{rec_file_path}" ' \
-                                         f'--http-cookie NID_AUT={self.NID_AUT} ' \
-                                         f'--http-cookie NID_SES={self.NID_SES}'
+                            command_string = 'streamlink ' \
+                                             f'https://chzzk.naver.com/live/{channel_id} ' \
+                                             f'{self.quality} ' \
+                                             f'-o "{rec_file_path}" ' \
+                                             f'--http-cookie NID_AUT={self.NID_AUT} ' \
+                                             f'--http-cookie NID_SES={self.NID_SES}'
 
-                        command = shlex.split(command_string)
+                            command = shlex.split(command_string)
 
-                        logger.info("Recorded video will be saved at %s", rec_file_path)
-                        self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
-                        self.recorder_processes[channel_id]['path'] = rec_file_path
+                            logger.info("Recorded video will be saved at %s", rec_file_path)
+                            self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
+                            self.recorder_processes[channel_id]['path'] = rec_file_path
 
-                        if self.CHAT:
-                            chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
-                            self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
-                                ["python3", "ChzzkChat/run.py",
-                                 "--nid_ses", self.NID_SES,
-                                 "--nid_aut", self.NID_AUT,
-                                 "--streamer_id", channel_id,
-                                 "--file_path", chat_file_path,
-                                 "--start_time", str(now.timestamp())]
+                            if self.CHAT:
+                                chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
+                                self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
+                                    ["python3", "ChzzkChat/run.py",
+                                     "--nid_ses", self.NID_SES,
+                                     "--nid_aut", self.NID_AUT,
+                                     "--streamer_id", channel_id,
+                                     "--file_path", chat_file_path,
+                                     "--start_time", str(now.timestamp())]
+                                )
+
+                            self.recording_count += 1
+
+                            record_started_time_str = datetime.datetime.strptime(
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
+                            self.send_embed(
+                                title="녹화 시작됨",
+                                description=f"채널 `{username}`의 녹화를 시작합니다.",
+                                thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                                fields=[
+                                    {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
+                                    {"name": "방송 시작", "value": record_started_time_str, "inline": False},
+                                    {"name": "녹화 시작", "value": now.strftime(self.MSG_TIME_FORMAT), "inline": False},
+                                    {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
+                                ]
                             )
+                            message_sent = True
 
-                        self.recording_count += 1
-
-                        record_started_time_str = datetime.datetime.strptime(
-                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
-                        self.send_embed(
-                            title="녹화 시작됨",
-                            description=f"채널 `{username}`의 녹화를 시작합니다.",
-                            thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
-                            fields=[
-                                {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
-                                {"name": "방송 시작", "value": record_started_time_str, "inline": False},
-                                {"name": "녹화 시작", "value": now.strftime(self.MSG_TIME_FORMAT), "inline": False},
-                                {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
-                            ]
-                        )
-                        message_sent = True
-
-                    elif not is_streaming:
-                        logger.info(f"{channel_id} is offline.")
-                except requests.RequestException:
-                    logger.error(f'Exception while checking {channel_id}')
+                        elif not is_streaming:
+                            logger.info(f"{channel_id} is offline.")
+                    except requests.RequestException:
+                        logger.error(f'Exception while checking {channel_id}')
 
             logger.info(f'Check cycle complete. Starting next cycle in {str(self.INTERVAL)} seconds.')
 
