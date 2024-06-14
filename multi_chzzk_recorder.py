@@ -84,7 +84,7 @@ class MultiChzzkRecorder:
         logger.info("Initializing Multi Chzzk Recorder...")
 
         if not check_streamlink():
-            logger.error("streamlink 6.7.4 or newer is required. Please update streamlink.")
+            logger.error("streamlink 6.7.4 or newer is required. Please install/update streamlink.")
             sys.exit(1)
 
         self.recording_count = 0
@@ -525,6 +525,7 @@ class MultiChzzkRecorder:
                 if recorder is not None:  # if recording was in progress, check if it had been finished
                     if recorder.poll() is not None:  # Check if there is a return code
                         logger.info(f"Recording of {channel_id} stopped.")
+                        process = self.recorder_processes[channel_id]['recorder']
 
                         try:
                             rec_file_path = self.recorder_processes[channel_id]['path']
@@ -543,9 +544,12 @@ class MultiChzzkRecorder:
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
+                            stdout, stderr = process.communicate()
+
                             self.send_message("녹화 파일 찾을 수 없음",
-                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화 파일을 찾을 수 없습니다.\n"
-                                              f"streamlink의 문제일 수 있습니다. 로그를 확인하세요.")
+                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.\n"
+                                              f"```{stderr.decode()}```")
+
 
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
@@ -606,7 +610,9 @@ class MultiChzzkRecorder:
                                      "--nid_aut", self.NID_AUT,
                                      "--streamer_id", channel_id,
                                      "--file_path", chat_file_path,
-                                     "--start_time", str(now.timestamp())]
+                                     "--start_time", str(now.timestamp())],
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE
                                 )
 
                             self.recording_count += 1
