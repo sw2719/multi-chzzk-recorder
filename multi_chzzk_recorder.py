@@ -91,6 +91,8 @@ class MultiChzzkRecorder:
         self.record_dict = {}
         self.discord_process = None
 
+        logger.debug("\n".join([f"{key}: {value}" for key, value in cfg.items()]))
+
         self.quality = cfg['quality']
         self.INTERVAL = cfg["interval"]
         self.ROOT_PATH = cfg['recording_save_root_dir']
@@ -113,6 +115,8 @@ class MultiChzzkRecorder:
 
         if self.CHAT:
             logger.info('Chat recording enabled.')
+            self.chat_path = f"{os.path.dirname(__file__)}/ChzzkChat/run.py"
+            logger.debug(f"Chat launch command: {self.chat_path}")
 
         logger.info(f'Quality set to: {self.quality}')
         self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
@@ -605,7 +609,7 @@ class MultiChzzkRecorder:
                             if self.CHAT:
                                 chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
                                 self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
-                                    ["python3", "ChzzkChat/run.py",
+                                    ["python3", self.chat_path,
                                      "--nid_ses", self.NID_SES,
                                      "--nid_aut", self.NID_AUT,
                                      "--streamer_id", channel_id,
