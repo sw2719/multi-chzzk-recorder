@@ -548,12 +548,9 @@ class MultiChzzkRecorder:
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
-                            stdout, stderr = process.communicate()
 
                             self.send_message("녹화 파일 찾을 수 없음",
-                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.\n"
-                                              f"```{stderr.decode()}```")
-
+                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.")
 
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
