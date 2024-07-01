@@ -159,7 +159,20 @@ class DiscordBot(commands.Bot):
 
             self.command_busy = True
 
-            self.command_socket.send_json({'type': 'list'})
+            self.command_socket.send_json({'type': 'list', 'list_id': False})
+            await self.send_result_after_command(ctx)
+
+            self.command_busy = False
+
+        @self.command()
+        async def list_id(ctx):
+            if self.command_busy:
+                await ctx.send('다른 명령이 이미 실행 중입니다.')
+                return
+
+            self.command_busy = True
+
+            self.command_socket.send_json({'type': 'list', 'list_id': True})
             await self.send_result_after_command(ctx)
 
             self.command_busy = False

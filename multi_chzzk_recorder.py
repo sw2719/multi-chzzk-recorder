@@ -285,7 +285,7 @@ class MultiChzzkRecorder:
                 elif command_data['type'] == 'remove':
                     self.remove_streamer(command_data['channel_id'])
                 elif command_data['type'] == 'list':
-                    self.send_list()
+                    self.send_list(command_data['list_id'])
                 elif command_data['type'] == 'dl':
                     self.download_vod(command_data['url'], command_data['quality'])
                 else:
@@ -295,13 +295,18 @@ class MultiChzzkRecorder:
                 pass
             time.sleep(1)
 
-    def send_list(self):
+    def send_list(self, list_id):
         if self.record_dict:
-            streamers_list_str = '\n'.join(
-                [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id][
-                                                                                'recorder'] is not None
-                 else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
-                 self.record_dict.items()])
+            if list_id:
+                streamers_list_str = '\n'.join(
+                    [f'{channel_data["channelName"]} `({channel_id})` [REC]'
+                     if self.recorder_processes[channel_id]['recorder'] is not None
+                     else f'{channel_data["channelName"]} `({channel_id})`'
+                     for channel_id, channel_data in self.record_dict.items()])
+            else:
+                streamers_list_str = '\n'.join(
+                    [f'{channel_data["channelName"]} [REC]' if self.recorder_processes[channel_id]['recorder'] is not None
+                     else f'{channel_data["channelName"]}' for channel_id, channel_data in self.record_dict.items()])
             self.send_message("녹화 채널 목록",
                               f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
                               f"{streamers_list_str}", socket=self.command_socket)
@@ -347,11 +352,19 @@ class MultiChzzkRecorder:
 
         logger.info(f'Added {channel_id}')
 
-    def remove_streamer(self, channel_id: str):
-        if channel_id not in self.record_dict:
-            self.send_message('제거 실패', f"채널 ID `{channel_id}`는 추가된 채널이 아닙니다.\n"
-                                       f"',list' 명령어로 추가된 채널 ID를 확인하세요.", socket=self.command_socket)
-            return
+    def remove_streamer(self, user_input: str):
+        if user_input in self.record_dict:
+            channel_id = user_input
+        else:
+            for channel in self.record_dict.values():
+                if user_input == channel['channelName']:
+                    channel_id = channel['channelId']
+                    break
+
+            else:
+                self.send_message('제거 실패', f"입력 `{user_input}`(으)로 채널을 확인할 수 없습니다.\n"
+                                           f"',list' 명령어로 추가된 채널을 확인하세요.", socket=self.command_socket)
+                return
 
         while True:
             if not self.loop_running:
