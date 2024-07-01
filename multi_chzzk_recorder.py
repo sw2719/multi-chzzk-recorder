@@ -561,9 +561,11 @@ class MultiChzzkRecorder:
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
+                            stdout, stderr = process.communicate()
 
                             self.send_message("녹화 파일 찾을 수 없음",
-                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.")
+                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.\n"
+                                              f"```{stderr.decode()}```")
 
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
@@ -611,7 +613,7 @@ class MultiChzzkRecorder:
                             command = shlex.split(command_string)
 
                             logger.info("Recorded video will be saved at %s", rec_file_path)
-                            self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
+                            self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                             self.recorder_processes[channel_id]['path'] = rec_file_path
 
                             if self.CHAT:
@@ -622,9 +624,7 @@ class MultiChzzkRecorder:
                                      "--nid_aut", self.NID_AUT,
                                      "--streamer_id", channel_id,
                                      "--file_path", chat_file_path,
-                                     "--start_time", str(now.timestamp())],
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE
+                                     "--start_time", str(now.timestamp())]
                                 )
 
                             self.recording_count += 1
