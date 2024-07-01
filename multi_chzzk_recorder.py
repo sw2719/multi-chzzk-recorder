@@ -601,8 +601,6 @@ class MultiChzzkRecorder:
                                 continue
 
                             # start streamlink process
-                            logger.info("Recorded video will be saved at %s", rec_file_path)
-
                             command_string = 'streamlink ' \
                                              f'https://chzzk.naver.com/live/{channel_id} ' \
                                              f'{self.quality} ' \
