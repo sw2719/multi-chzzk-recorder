@@ -10,6 +10,7 @@ import time
 import threading
 import shlex
 import atexit
+import sys
 
 import requests
 import zmq
@@ -39,6 +40,8 @@ DEFAULT_CFG = {
     'discord_bot_token': '',
     'target_user_id': ''
 }
+
+CURRENT_FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -115,7 +118,7 @@ class MultiChzzkRecorder:
 
         if self.CHAT:
             logger.info('Chat recording enabled.')
-            self.chat_path = f"{os.path.dirname(__file__)}/ChzzkChat/run.py"
+            self.chat_path = f"{CURRENT_FILE_PATH}/ChzzkChat/run.py"
             logger.debug(f"Chat launch command: {self.chat_path}")
 
         logger.info(f'Quality set to: {self.quality}')
@@ -187,7 +190,7 @@ class MultiChzzkRecorder:
             sys.exit(1)
 
         logger.info('Starting discord bot..')
-        self.discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
+        self.discord_process = subprocess.Popen([sys.executable, f"{CURRENT_FILE_PATH}/bots/discord_bot.py",
                                                  "-t", token,
                                                  "-u", user_id,
                                                  "-p", str(port),
@@ -619,7 +622,7 @@ class MultiChzzkRecorder:
                             if self.CHAT:
                                 chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
                                 self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
-                                    ["python3", self.chat_path,
+                                    [sys.executable, self.chat_path,
                                      "--nid_ses", self.NID_SES,
                                      "--nid_aut", self.NID_AUT,
                                      "--streamer_id", channel_id,
