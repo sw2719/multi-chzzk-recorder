@@ -29,7 +29,7 @@ DEFAULT_CFG = {
     'quality': 'best',
     'record_chat': False,
     'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
-    'vod_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+    'vod_name_format': '[{username}]{stream_started}_{escaped_title}.mp4',
     'time_format': '%y-%m-%d %H_%M_%S',
     'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
     'fallback_to_current_dir': True,
@@ -105,6 +105,7 @@ class MultiChzzkRecorder:
         self.MNT_CMD = cfg['mount_command']
         self.FALLBACK = cfg['fallback_to_current_dir']
         self.FILE_NAME_FORMAT = cfg['file_name_format']
+        self.VOD_FILE_NAME_FORMAT = cfg['vod_name_format']
         self.TIME_FORMAT = cfg['time_format']
         self.MSG_TIME_FORMAT = cfg['msg_time_format']
 
@@ -472,7 +473,7 @@ class MultiChzzkRecorder:
             "uploaded": uploaded_time.strftime(self.TIME_FORMAT),
             "download_started": now.strftime(self.TIME_FORMAT)
         }
-        file_name = str(self.FILE_NAME_FORMAT.format(**_data))
+        file_name = str(self.VOD_FILE_NAME_FORMAT.format(**_data))
         rec_file_path = self.get_file_path(username, file_name, is_vod=True)
 
         def on_streamlink_exit(return_code):
@@ -493,7 +494,7 @@ class MultiChzzkRecorder:
                                     {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False},
                                     {"name": "소요 시간", "value": f"{str(elapsed_time)}", "inline": False}
                                 ],
-                                socket=self.command_socket)
+                                socket=self.socket)
             else:
                 self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
 
@@ -512,7 +513,7 @@ class MultiChzzkRecorder:
 
         command = shlex.split(command_string)
 
-        logger.info(f"Downloading {url} at {rec_file_path}")
+        logger.info(f"Downloading {url} to {rec_file_path}")
         thread = threading.Thread(target=start_dl, args=(on_streamlink_exit, command))
         thread.start()
 
@@ -524,7 +525,7 @@ class MultiChzzkRecorder:
                 {"name": "제목", "value": f"`{video_title}`", "inline": False},
                 {"name": "방송 시작", "value": f"`{stream_started_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
                 {"name": "업로드", "value": f"`{uploaded_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
-                {"name": "길이", "value": f"{str(video_duration)}`", "inline": False},
+                {"name": "길이", "value": f"{str(video_duration)}", "inline": False},
                 {"name": "품질", "value": f"`{'최고 품질' if quality == 'best' else quality}`", "inline": False},
                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
             ],
@@ -568,7 +569,7 @@ class MultiChzzkRecorder:
 
                             self.send_message("녹화 파일 찾을 수 없음",
                                               f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.\n"
-                                              f"```{stderr}```")
+                                              f"```{stdout}```")
 
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
