@@ -3,7 +3,7 @@ import json
 import logging
 import re
 
-from typing import Union, Dict, TypedDict
+from typing import Union, Dict, TypedDict, List
 from fake_useragent import UserAgent
 
 REQUEST_TIMEOUT = 15
@@ -95,3 +95,35 @@ class ChzzkAPI:
                 return None
 
             return json.loads(r.text)['content']
+
+    def _search_channel(self, channel_name, offset=0, size=5):
+        with requests.get(f'https://api.chzzk.naver.com/service/v1/search/channels?keyword={channel_name}&offset={offset}&size={size}',
+                          headers=request_header, cookies=self._cookies, timeout=REQUEST_TIMEOUT) as r:
+            try:
+                r.raise_for_status()
+            except requests.exceptions.HTTPError:
+                logger.error(f'HTTP Error while searching channel {channel_name}')
+                logger.error(f'HTTP Status code {r.status_code}')
+                return None
+            except requests.exceptions.Timeout:
+                logger.error(f'Timeout while searching channel {channel_name}')
+                return None
+
+            return json.loads(r.text)['content']['data']
+
+    def _get_channel_by_name(self, channel_name, size=1):
+        channels = self._search_channel(channel_name, size=size)
+
+        if not channels:
+            return None
+
+        for channel in channels:
+            channel = channel['channel']
+            if channel['channelName'] == channel_name:
+                return channel
+        else:
+            return None
+
+    def get_channel_id(self, channel_name) -> str:
+        channel = self._get_channel_by_name(channel_name)
+        return channel['channelId'] if channel else None

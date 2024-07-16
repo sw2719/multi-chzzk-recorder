@@ -10,6 +10,7 @@ import time
 import threading
 import shlex
 import atexit
+import sys
 
 import requests
 import zmq
@@ -28,7 +29,7 @@ DEFAULT_CFG = {
     'quality': 'best',
     'record_chat': False,
     'file_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
-    'vod_name_format': '[{username}]{stream_started}_{escaped_title}.ts',
+    'vod_name_format': '[{username}]{stream_started}_{escaped_title}.mp4',
     'time_format': '%y-%m-%d %H_%M_%S',
     'msg_time_format': '%Y년 %m월 %d일 %H시 %M분 %S초',
     'fallback_to_current_dir': True,
@@ -39,6 +40,8 @@ DEFAULT_CFG = {
     'discord_bot_token': '',
     'target_user_id': ''
 }
+
+CURRENT_FILE_PATH = os.path.dirname(os.path.abspath(__file__))
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -84,12 +87,14 @@ class MultiChzzkRecorder:
         logger.info("Initializing Multi Chzzk Recorder...")
 
         if not check_streamlink():
-            logger.error("streamlink 6.7.4 or newer is required. Please update streamlink.")
+            logger.error("streamlink 6.7.4 or newer is required. Please install/update streamlink.")
             sys.exit(1)
 
         self.recording_count = 0
         self.record_dict = {}
         self.discord_process = None
+
+        logger.debug("\n".join([f"{key}: {value}" for key, value in cfg.items()]))
 
         self.quality = cfg['quality']
         self.INTERVAL = cfg["interval"]
@@ -100,6 +105,7 @@ class MultiChzzkRecorder:
         self.MNT_CMD = cfg['mount_command']
         self.FALLBACK = cfg['fallback_to_current_dir']
         self.FILE_NAME_FORMAT = cfg['file_name_format']
+        self.VOD_FILE_NAME_FORMAT = cfg['vod_name_format']
         self.TIME_FORMAT = cfg['time_format']
         self.MSG_TIME_FORMAT = cfg['msg_time_format']
 
@@ -113,6 +119,8 @@ class MultiChzzkRecorder:
 
         if self.CHAT:
             logger.info('Chat recording enabled.')
+            self.chat_path = f"{CURRENT_FILE_PATH}/ChzzkChat/run.py"
+            logger.debug(f"Chat launch command: {self.chat_path}")
 
         logger.info(f'Quality set to: {self.quality}')
         self.chzzk = ChzzkAPI(self.NID_AUT, self.NID_SES)
@@ -183,7 +191,7 @@ class MultiChzzkRecorder:
             sys.exit(1)
 
         logger.info('Starting discord bot..')
-        self.discord_process = subprocess.Popen(["python3", "bots/discord_bot.py",
+        self.discord_process = subprocess.Popen([sys.executable, f"{CURRENT_FILE_PATH}/bots/discord_bot.py",
                                                  "-t", token,
                                                  "-u", user_id,
                                                  "-p", str(port),
@@ -273,39 +281,52 @@ class MultiChzzkRecorder:
         logger.info('Command poller started.')
         while True:
             try:
-                data = self.command_socket.recv_json(flags=zmq.NOBLOCK)
-                logger.info(f'Got command: {data}')
+                command_data = self.command_socket.recv_json(flags=zmq.NOBLOCK)
+                logger.info(f'Got command: {command_data}')
 
-                if data['type'] == 'add':
-                    self.add_streamer(data['channel_id'])
-                elif data['type'] == 'remove':
-                    self.remove_streamer(data['channel_id'])
-                elif data['type'] == 'list':
-                    self.send_list()
-                elif data['type'] == 'dl':
-                    self.download_vod(data['url'], data['quality'])
+                if command_data['type'] == 'add':
+                    self.add_streamer(command_data['channel'], command_data['add_by_name'])
+                elif command_data['type'] == 'remove':
+                    self.remove_streamer(command_data['channel_id'])
+                elif command_data['type'] == 'list':
+                    self.send_list(command_data['list_id'])
+                elif command_data['type'] == 'dl':
+                    self.download_vod(command_data['url'], command_data['quality'])
                 else:
-                    logger.error(f'Unknown command type: {data["type"]}')
+                    logger.error(f'Unknown command type: {command_data["type"]}')
 
             except zmq.ZMQError:
                 pass
             time.sleep(1)
 
-    def send_list(self):
-        streamers_list_str = '\n'.join(
-            [f'[REC] `{channel_data["channelName"]} ({channel_id})`' if self.recorder_processes[channel_id][
-                                                                            'recorder'] is not None
-             else f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
-             self.record_dict.items()])
-        self.send_message("녹화 채널 목록",
-                          f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
-                          f"{streamers_list_str}", socket=self.command_socket)
+    def send_list(self, list_id):
+        if self.record_dict:
+            if list_id:
+                streamers_list_str = '\n'.join(
+                    [f'{channel_data["channelName"]} `({channel_id})` [REC]'
+                     if self.recorder_processes[channel_id]['recorder'] is not None
+                     else f'{channel_data["channelName"]} `({channel_id})`'
+                     for channel_id, channel_data in self.record_dict.items()])
+            else:
+                streamers_list_str = '\n'.join(
+                    [f'{channel_data["channelName"]} [REC]' if self.recorder_processes[channel_id]['recorder'] is not None
+                     else f'{channel_data["channelName"]}' for channel_id, channel_data in self.record_dict.items()])
+            self.send_message("녹화 채널 목록",
+                              f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n"
+                              f"{streamers_list_str}", socket=self.command_socket)
+        else:
+            self.send_message("녹화 채널 목록", "녹화 중인 채널이 없습니다.", socket=self.command_socket)
 
     def save_record_dict(self):
         with open('record_list.txt', 'w') as f:
             f.write('\n'.join(self.record_dict.keys()))
 
-    def add_streamer(self, channel_id: str):
+    def add_streamer(self, channel: str, add_by_name: bool):
+        if add_by_name:
+            channel_id = self.chzzk.get_channel_id(channel)
+        else:
+            channel_id = channel
+
         if channel_id in self.record_dict:
             self.send_message('추가 실패', f"채널 ID `{channel_id}` 는 이미 추가되어 있습니다.", socket=self.command_socket)
             return
@@ -333,13 +354,21 @@ class MultiChzzkRecorder:
 
         self.send_message("채널 추가됨", f"채널 `{username} ({channel_id})`을/를 녹화 목록에 추가했습니다.", socket=self.command_socket)
 
-        logger.info(f'Added {channel_id} to record dict')
+        logger.info(f'Added {channel_id}')
 
-    def remove_streamer(self, channel_id: str):
-        if channel_id not in self.record_dict:
-            self.send_message('제거 실패', f"채널 ID `{channel_id}`는 추가된 채널이 아닙니다.\n"
-                                       f"',list' 명령어로 추가된 채널 ID를 확인하세요.", socket=self.command_socket)
-            return
+    def remove_streamer(self, user_input: str):
+        if user_input in self.record_dict:
+            channel_id = user_input
+        else:
+            for channel in self.record_dict.values():
+                if user_input == channel['channelName']:
+                    channel_id = channel['channelId']
+                    break
+
+            else:
+                self.send_message('제거 실패', f"입력 `{user_input}`(으)로 채널을 확인할 수 없습니다.\n"
+                                           f"',list' 명령어로 추가된 채널을 확인하세요.", socket=self.command_socket)
+                return
 
         while True:
             if not self.loop_running:
@@ -358,7 +387,7 @@ class MultiChzzkRecorder:
         self.send_message("제거 성공", f"채널 `{removed_channel_data['channelName']} ({channel_id})`을/를 녹화 목록에서 제거했습니다.",
                           socket=self.command_socket)
 
-        logger.info(f'Removed {channel_id} from record dict')
+        logger.info(f'Removed {channel_id}')
 
     def get_file_path(self, username: str, file_name: str, is_vod=False):
         if is_vod:
@@ -444,7 +473,7 @@ class MultiChzzkRecorder:
             "uploaded": uploaded_time.strftime(self.TIME_FORMAT),
             "download_started": now.strftime(self.TIME_FORMAT)
         }
-        file_name = str(self.FILE_NAME_FORMAT.format(**_data))
+        file_name = str(self.VOD_FILE_NAME_FORMAT.format(**_data))
         rec_file_path = self.get_file_path(username, file_name, is_vod=True)
 
         def on_streamlink_exit(return_code):
@@ -465,7 +494,7 @@ class MultiChzzkRecorder:
                                     {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False},
                                     {"name": "소요 시간", "value": f"{str(elapsed_time)}", "inline": False}
                                 ],
-                                socket=self.command_socket)
+                                socket=self.socket)
             else:
                 self.send_message('다운로드 실패', f'`{url}` 의 다운로드 중 오류가 발생했습니다.', socket=self.socket)
 
@@ -484,7 +513,7 @@ class MultiChzzkRecorder:
 
         command = shlex.split(command_string)
 
-        logger.info(f"Downloading {url} at {rec_file_path}")
+        logger.info(f"Downloading {url} to {rec_file_path}")
         thread = threading.Thread(target=start_dl, args=(on_streamlink_exit, command))
         thread.start()
 
@@ -496,7 +525,7 @@ class MultiChzzkRecorder:
                 {"name": "제목", "value": f"`{video_title}`", "inline": False},
                 {"name": "방송 시작", "value": f"`{stream_started_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
                 {"name": "업로드", "value": f"`{uploaded_time.strftime(self.MSG_TIME_FORMAT)}`", "inline": False},
-                {"name": "길이", "value": f"{str(video_duration)}`", "inline": False},
+                {"name": "길이", "value": f"{str(video_duration)}", "inline": False},
                 {"name": "품질", "value": f"`{'최고 품질' if quality == 'best' else quality}`", "inline": False},
                 {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
             ],
@@ -517,6 +546,7 @@ class MultiChzzkRecorder:
                 if recorder is not None:  # if recording was in progress, check if it had been finished
                     if recorder.poll() is not None:  # Check if there is a return code
                         logger.info(f"Recording of {channel_id} stopped.")
+                        process = self.recorder_processes[channel_id]['recorder']
 
                         try:
                             rec_file_path = self.recorder_processes[channel_id]['path']
@@ -535,9 +565,11 @@ class MultiChzzkRecorder:
 
                         except FileNotFoundError:
                             logger.error(f"Recorded file of {channel_id} not found!")
+                            stdout, stderr = process.communicate()
+
                             self.send_message("녹화 파일 찾을 수 없음",
-                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화 파일을 찾을 수 없습니다.\n"
-                                              f"streamlink의 문제일 수 있습니다. 로그를 확인하세요.")
+                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.\n"
+                                              f"```{stdout}```")
 
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
@@ -550,77 +582,76 @@ class MultiChzzkRecorder:
 
                         self.recording_count -= 1
 
-                try:
-                    username = self.record_dict[channel_id]["channelName"]
-                    is_streaming, stream_data = self.chzzk.check_live(channel_id)
-                    if is_streaming is None:
-                        self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
-                        message_sent = True
-                    elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
-                        logger.info(f"{channel_id} is online. Starting recording...")
-                        now = datetime.datetime.now()
-                        _data = {
-                            "username": self.record_dict[channel_id]["channelName"],
-                            "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
-                            "stream_started": datetime.datetime.strptime(
-                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
-                            "record_started": now.strftime(self.TIME_FORMAT)
-                        }
-                        file_name = self.FILE_NAME_FORMAT.format(**_data)
+                else:
+                    try:
+                        username = self.record_dict[channel_id]["channelName"]
+                        is_streaming, stream_data = self.chzzk.check_live(channel_id)
+                        if is_streaming is None:
+                            self.send_message('채널 확인 실패', f'채널 {username}의 방송 상태를 확인하던 중 오류가 발생했습니다.')
+                            message_sent = True
+                        elif is_streaming and self.recorder_processes[channel_id]['recorder'] is None:
+                            logger.info(f"{channel_id} is online. Starting recording...")
+                            now = datetime.datetime.now()
+                            _data = {
+                                "username": self.record_dict[channel_id]["channelName"],
+                                "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
+                                "stream_started": datetime.datetime.strptime(
+                                    stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
+                                "record_started": now.strftime(self.TIME_FORMAT)
+                            }
+                            file_name = self.FILE_NAME_FORMAT.format(**_data)
 
-                        rec_file_path = self.get_file_path(username, file_name)
+                            rec_file_path = self.get_file_path(username, file_name)
 
-                        if rec_file_path is None:
-                            continue
+                            if rec_file_path is None:
+                                continue
 
-                        # start streamlink process
-                        logger.info("Recorded video will be saved at %s", rec_file_path)
+                            # start streamlink process
+                            command_string = 'streamlink ' \
+                                             f'https://chzzk.naver.com/live/{channel_id} ' \
+                                             f'{self.quality} ' \
+                                             f'-o "{rec_file_path}" ' \
+                                             f'--http-cookie NID_AUT={self.NID_AUT} ' \
+                                             f'--http-cookie NID_SES={self.NID_SES}'
 
-                        command_string = 'streamlink ' \
-                                         f'https://chzzk.naver.com/live/{channel_id} ' \
-                                         f'{self.quality} ' \
-                                         f'-o "{rec_file_path}" ' \
-                                         f'--http-cookie NID_AUT={self.NID_AUT} ' \
-                                         f'--http-cookie NID_SES={self.NID_SES}'
+                            command = shlex.split(command_string)
 
-                        command = shlex.split(command_string)
+                            logger.info("Recorded video will be saved at %s", rec_file_path)
+                            self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+                            self.recorder_processes[channel_id]['path'] = rec_file_path
 
-                        logger.info("Recorded video will be saved at %s", rec_file_path)
-                        self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command)
-                        self.recorder_processes[channel_id]['path'] = rec_file_path
+                            if self.CHAT:
+                                chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
+                                self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
+                                    [sys.executable, self.chat_path,
+                                     "--nid_ses", self.NID_SES,
+                                     "--nid_aut", self.NID_AUT,
+                                     "--streamer_id", channel_id,
+                                     "--file_path", chat_file_path,
+                                     "--start_time", str(now.timestamp())]
+                                )
 
-                        if self.CHAT:
-                            chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
-                            self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
-                                ["python3", "ChzzkChat/run.py",
-                                 "--nid_ses", self.NID_SES,
-                                 "--nid_aut", self.NID_AUT,
-                                 "--streamer_id", channel_id,
-                                 "--file_path", chat_file_path,
-                                 "--start_time", str(now.timestamp())]
+                            self.recording_count += 1
+
+                            record_started_time_str = datetime.datetime.strptime(
+                                stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
+                            self.send_embed(
+                                title="녹화 시작됨",
+                                description=f"채널 `{username}`의 녹화를 시작합니다.",
+                                thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
+                                fields=[
+                                    {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
+                                    {"name": "방송 시작", "value": record_started_time_str, "inline": False},
+                                    {"name": "녹화 시작", "value": now.strftime(self.MSG_TIME_FORMAT), "inline": False},
+                                    {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
+                                ]
                             )
+                            message_sent = True
 
-                        self.recording_count += 1
-
-                        record_started_time_str = datetime.datetime.strptime(
-                            stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
-                        self.send_embed(
-                            title="녹화 시작됨",
-                            description=f"채널 `{username}`의 녹화를 시작합니다.",
-                            thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
-                            fields=[
-                                {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
-                                {"name": "방송 시작", "value": record_started_time_str, "inline": False},
-                                {"name": "녹화 시작", "value": now.strftime(self.MSG_TIME_FORMAT), "inline": False},
-                                {"name": "파일 경로", "value": f"`{rec_file_path}`", "inline": False}
-                            ]
-                        )
-                        message_sent = True
-
-                    elif not is_streaming:
-                        logger.info(f"{channel_id} is offline.")
-                except requests.RequestException:
-                    logger.error(f'Exception while checking {channel_id}')
+                        elif not is_streaming:
+                            logger.info(f"{channel_id} is offline.")
+                    except requests.RequestException:
+                        logger.error(f'Exception while checking {channel_id}')
 
             logger.info(f'Check cycle complete. Starting next cycle in {str(self.INTERVAL)} seconds.')
 
