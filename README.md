@@ -13,7 +13,7 @@
 * Raspberry Pi나 NAS 등에서 24시간 작동을 목적으로 제작되었으며, 설치 및 사용에 기초적인 프로그래밍 지식이 필요합니다.
 
 # 사용 방법
-* 최초 clone시 또는 업데이트시 `git submodule update --init --recursive` 명령을 실행하세요.
+* 최초 clone시 `git submodule update --init --recursive` 명령을 실행하세요.
 * requirements.txt로 의존성을 설치하세요.
 * 최초 실행시 설정 파일이 생성되고 프로그램이 종료됩니다. NID_SES, NID_AUT, 저장 디렉토리를 설정 후 다시 프로그램을 실행하세요.
 * 모든 기능 (채널 추가/제거, 알림, 다시보기 다운로드 등)을 사용하려면 디스코드 봇 설정이 필요합니다.
