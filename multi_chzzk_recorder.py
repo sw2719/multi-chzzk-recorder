@@ -166,12 +166,12 @@ class MultiChzzkRecorder:
             self.poll_thread.start()
 
         streamers_list_str = '\n'.join(
-            [f'`{channel_data["channelName"]} ({channel_id})`' for channel_id, channel_data in
-             self.record_dict.items()])
+            [f'{channel_data["channelName"]}' for channel_data in self.record_dict.items()])
 
         self.send_embed(
             title="치지직 레코더 시작됨",
-            description=f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}",
+            description=f"채널 {len(self.record_dict)}개를 녹화 중입니다:\n{streamers_list_str}"
+                        if self.record_dict else "녹화 중인 채널이 없습니다.",
             fields=[
                 {"name": "녹화 품질", "value": f"{'최고 품질 (기본값)' if self.quality == 'best' else self.quality}",
                  "inline": False},

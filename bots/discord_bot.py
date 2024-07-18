@@ -222,8 +222,12 @@ class DiscordBot(commands.Bot):
 
     async def on_ready(self):
         pprint('Logged on as ', self.user)
-        self.target_user = await self.get_or_fetch_user(TARGET_USER_ID)
-        pprint('Got target user: ', self.target_user.name, f'({self.target_user.id})')
+        if TARGET_USER_ID:
+            self.target_user = await self.get_or_fetch_user(TARGET_USER_ID)
+            pprint('User set to: ', self.target_user.name, f'({self.target_user.id})')
+        else:
+            self.target_user = self.owner
+            pprint('Using owner as user: ', self.target_user.name, f'({self.target_user.id})')
 
         if self.init:
             self.socket = self.context.socket(zmq.PAIR)
@@ -245,7 +249,11 @@ if __name__ == '__main__':
     parser.add_argument("-i", "--interval", help="Recorder interval", required=True)
     args = parser.parse_args()
     TOKEN = args.token
-    TARGET_USER_ID = int(args.target)
+    TARGET_USER_ID = args.target
+
+    if TARGET_USER_ID:
+        TARGET_USER_ID = int(TARGET_USER_ID)
+
     PORT = int(args.port)
     THRESHOLD = int(args.interval) + 30
 
