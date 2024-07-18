@@ -72,7 +72,11 @@ class ChzzkAPI:
                 return False, None
 
             data = json.loads(r.text)
-            return data['content']['status'] == 'OPEN', data['content']
+
+            if data['content'] is None:
+                return False, None  # Workaround for issue #2
+            else:
+                return data['content']['status'] == 'OPEN', data['content']
 
     def get_video(self, video_url: str) -> Union[ChzzkVideo, None]:
         match = re.match(r'https://chzzk.naver.com/video/(\d+)', video_url)
