@@ -166,7 +166,7 @@ class MultiChzzkRecorder:
             self.poll_thread.start()
 
         streamers_list_str = '\n'.join(
-            [f'{channel_data["channelName"]}' for channel_data in self.record_dict.items()])
+            [f'{channel_data["channelName"]}' for channel_data in self.record_dict.values()])
 
         self.send_embed(
             title="치지직 레코더 시작됨",
