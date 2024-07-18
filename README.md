@@ -48,7 +48,7 @@
     - `record_started`: 녹화 시작 시각
     - `escaped_title`: 녹화 시작 시점의 방송 제목
 * `vod_name_format`: VOD 다운로드 파일명 포맷 
-  - 기본값: `[{username}]{stream_started}_{escaped_title}.ts`
+  - 기본값: `[{username}]{stream_started}_{escaped_title}.mp4`
   - 사용 가능 변수 (syntax: `{변수명}`): 
     - `username`: 채널 사용자명
     - `stream_started`: 방송 시작 시각
