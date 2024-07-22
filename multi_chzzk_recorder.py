@@ -718,7 +718,7 @@ def main():
             else:
                 cfg[key] = temp_cfg[key]
 
-        if cfg['vod_name_format'].endswith('ts'):
+        if cfg['vod_name_format'].endswith('.ts'):
             cfg['vod_name_format'] = cfg['vod_name_format'].removesuffix('.ts') + '.mp4'
             cfg_update_required = True
 
