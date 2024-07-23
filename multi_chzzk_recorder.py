@@ -79,6 +79,7 @@ def check_streamlink() -> bool:
 class RecorderProcess(TypedDict):
     recorder: Union[None, subprocess.Popen]
     path: Union[None, str]
+    time: Union[None, datetime.datetime]
     chat_recorder: Union[None, subprocess.Popen]
 
 
@@ -147,6 +148,7 @@ class MultiChzzkRecorder:
             self.recorder_processes[channel_id]: RecorderProcess = {
                 'recorder': None,
                 'path': None,
+                'time': None,
                 'chat_recorder': None
             }
 
@@ -339,7 +341,9 @@ class MultiChzzkRecorder:
                 self.record_dict[channel_id] = channel_data
                 self.recorder_processes[channel_id]: RecorderProcess = {
                     'recorder': None,
-                    'path': None
+                    'path': None,
+                    'time': None,
+                    'chat_recorder': None
                 }
                 break
 
@@ -544,6 +548,8 @@ class MultiChzzkRecorder:
             for channel_id in self.record_dict:
                 recorder = self.recorder_processes[channel_id]['recorder']
                 if recorder is not None:  # if recording was in progress, check if it had been finished
+                    chat_recorder = self.recorder_processes[channel_id]['chat_recorder']
+
                     if recorder.poll() is not None:  # Check if there is a return code
                         logger.info(f"Recording of {channel_id} stopped.")
                         process = self.recorder_processes[channel_id]['recorder']
@@ -574,13 +580,25 @@ class MultiChzzkRecorder:
                         message_sent = True
                         self.recorder_processes[channel_id]['recorder'] = None
                         self.recorder_processes[channel_id]['path'] = None
+                        self.recorder_processes[channel_id]['time'] = None
 
-                        if self.recorder_processes[channel_id]['chat_recorder'] is not None:
+                        if chat_recorder is not None:
                             self.recorder_processes[channel_id]['chat_recorder'].terminate()
                             self.recorder_processes[channel_id]['chat_recorder'].wait()
                             self.recorder_processes[channel_id]['chat_recorder'] = None
 
                         self.recording_count -= 1
+                    elif chat_recorder is not None and chat_recorder.poll() is not None:
+                        logger.warning(f"Chat recorder of {channel_id} stopped. Restarting...")
+                        chat_file_path = self.recorder_processes[channel_id]['path'].removesuffix('.ts') + '.txt'
+                        self.recorder_processes[channel_id]['chat_recorder'] = subprocess.Popen(
+                            [sys.executable, self.chat_path,
+                             "--nid_ses", self.NID_SES,
+                             "--nid_aut", self.NID_AUT,
+                             "--streamer_id", channel_id,
+                             "--file_path", chat_file_path,
+                             "--start_time", str(self.recorder_processes[channel_id]["time"].timestamp())]
+                        )
 
                 else:
                     try:
@@ -619,6 +637,7 @@ class MultiChzzkRecorder:
                             logger.info("Recorded video will be saved at %s", rec_file_path)
                             self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
                             self.recorder_processes[channel_id]['path'] = rec_file_path
+                            self.recorder_processes[channel_id]['time'] = now
 
                             if self.CHAT:
                                 chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
