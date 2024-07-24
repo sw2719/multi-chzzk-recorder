@@ -560,7 +560,7 @@ class MultiChzzkRecorder:
 
                             self.send_embed(
                                 title="녹화 종료됨",
-                                description=f"채널 `{self.record_dict[channel_id]['channelName']}`의 녹화가 끝났습니다.",
+                                description=f"채널 {self.record_dict[channel_id]['channelName']}의 녹화가 끝났습니다.",
                                 thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
                                 fields=[
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`",
@@ -574,7 +574,7 @@ class MultiChzzkRecorder:
                             stdout, stderr = process.communicate()
 
                             self.send_message("녹화 파일 찾을 수 없음",
-                                              f"`{self.record_dict[channel_id]['channelName']} ({channel_id})`의 녹화를 시작할 수 없습니다.\n"
+                                              f"{self.record_dict[channel_id]['channelName']}의 녹화를 시작할 수 없습니다.\n"
                                               f"```{stdout}```")
 
                         message_sent = True
@@ -656,7 +656,7 @@ class MultiChzzkRecorder:
                                 stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.MSG_TIME_FORMAT)
                             self.send_embed(
                                 title="녹화 시작됨",
-                                description=f"채널 `{username}`의 녹화를 시작합니다.",
+                                description=f"채널 {username}의 녹화를 시작합니다.",
                                 thumbnail={"url": self.record_dict[channel_id]['channelImageUrl']},
                                 fields=[
                                     {"name": "제목", "value": f"`{stream_data['liveTitle']}`", "inline": False},
