@@ -70,6 +70,7 @@ def check_streamlink() -> bool:
             raise FileNotFoundError
 
         s_ver = version.parse('.'.join(re_ver.groups()))
+        logger.info(f"Streamlink version: {s_ver}")
         return s_ver >= version.parse(STREAMLINK_MIN_VERSION)
     except FileNotFoundError:
         logger.error("Streamlink not found. Install streamlink first then launch again.")
