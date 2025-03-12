@@ -2,8 +2,9 @@ import sys
 import argparse
 import asyncio
 import disnake as ds
-from disnake.ext import commands
 import zmq
+
+from disnake.ext import commands
 
 if sys.version_info[0] == 3 and sys.version_info[1] >= 8 and sys.platform.startswith('win'):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -69,6 +70,7 @@ class DiscordBot(commands.Bot):
                             await self.send_message(embed)
                             break
                         except ds.HTTPException:
+                            pprint("Exception while handling recorder message")  # let's see if it's hanging here
                             await asyncio.sleep(1)
 
                     no_data_counter = 0
