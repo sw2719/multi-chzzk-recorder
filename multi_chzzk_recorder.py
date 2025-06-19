@@ -42,6 +42,7 @@ DEFAULT_CFG = {
 }
 
 CURRENT_FILE_PATH = os.path.dirname(os.path.abspath(__file__))
+DOCKER = os.environ.get("RUN_IN_CONTAINER", False)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -81,6 +82,7 @@ class RecorderProcess(TypedDict):
     recorder: Union[None, subprocess.Popen]
     path: Union[None, str]
     time: Union[None, datetime.datetime]
+    data: Union[None, dict]
     chat_recorder: Union[None, subprocess.Popen]
 
 
@@ -559,6 +561,11 @@ class MultiChzzkRecorder:
                             rec_file_path = self.recorder_processes[channel_id]['path']
                             readable_size = self.get_readable_file_size(os.path.getsize(rec_file_path))
 
+                            record_start_time = self.recorder_processes[channel_id]['time']
+                            record_end_time = datetime.datetime.now()
+                            record_duration = record_end_time - record_start_time
+                            readable_duration = str(record_duration)
+
                             self.send_embed(
                                 title="녹화 종료됨",
                                 description=f"채널 {self.record_dict[channel_id]['channelName']}의 녹화가 끝났습니다.",
@@ -566,7 +573,8 @@ class MultiChzzkRecorder:
                                 fields=[
                                     {"name": "파일 경로", "value": f"`{self.recorder_processes[channel_id]['path']}`",
                                      "inline": False},
-                                    {"name": "파일 크기", "value": readable_size, "inline": False}
+                                    {"name": "파일 크기", "value": readable_size, "inline": False},
+                                    {"name": "녹화 시간", "value": readable_duration, "inline": False}
                                 ]
                             )
 
@@ -616,7 +624,8 @@ class MultiChzzkRecorder:
                                 "escaped_title": truncate_long_name(escape_filename(stream_data["liveTitle"])),
                                 "stream_started": datetime.datetime.strptime(
                                     stream_data["openDate"], '%Y-%m-%d %H:%M:%S').strftime(self.TIME_FORMAT),
-                                "record_started": now.strftime(self.TIME_FORMAT)
+                                "record_started": now.strftime(self.TIME_FORMAT),
+                                "duration": 0
                             }
                             file_name = self.FILE_NAME_FORMAT.format(**_data)
 
@@ -639,6 +648,7 @@ class MultiChzzkRecorder:
                             self.recorder_processes[channel_id]['recorder'] = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
                             self.recorder_processes[channel_id]['path'] = rec_file_path
                             self.recorder_processes[channel_id]['time'] = now
+                            self.recorder_processes[channel_id]['data'] = _data
 
                             if self.CHAT:
                                 chat_file_path = rec_file_path.removesuffix('.ts') + '.txt'
@@ -718,16 +728,37 @@ def main():
     logger.info(args)
 
     if not os.path.isfile('config.json'):
-        logger.warning('config.json not found!')
-        with open('config.json', 'w') as f:
-            json.dump(DEFAULT_CFG, f, indent=4)
-            logger.info('Created default config file. Review and edit settings as required. Exiting...')
-            sys.exit(0)
+        if DOCKER:
+            cfg = DEFAULT_CFG
+            cfg['nid_aut'] = os.environ.get('NID_AUT')
+            cfg['nid_ses'] = os.environ.get('NID_SES')
+            cfg['recording_save_root_dir'] = os.environ.get('RECORDING_SAVE_ROOT_DIR', '/recordings')
+            cfg['quality'] = os.environ.get('QUALITY', DEFAULT_CFG['quality'])
+            cfg['record_chat'] = os.environ.get('RECORD_CHAT') == '1'
+            cfg['file_name_format'] = os.environ.get('FILE_NAME_FORMAT', DEFAULT_CFG['file_name_format'])
+            cfg['time_format'] = os.environ.get('TIME_FORMAT', DEFAULT_CFG['time_format'])
+            cfg['msg_time_format'] = os.environ.get('MSG_TIME_FORMAT', DEFAULT_CFG['msg_time_format'])
+            cfg['fallback_to_current_dir'] = False
+            cfg['interval'] = int(os.environ.get('INTERVAL', DEFAULT_CFG['interval']))
+            cfg['use_discord_bot'] = os.environ.get('USE_DISCORD_BOT') == '1'
+            cfg['zmq_port'] = int(os.environ.get('ZMQ_PORT', DEFAULT_CFG['zmq_port']))
+            cfg['discord_bot_token'] = os.environ.get('DISCORD_BOT_TOKEN', DEFAULT_CFG['discord_bot_token'])
+            cfg['target_user_id'] = os.environ.get('TARGET_USER_ID', DEFAULT_CFG['target_user_id'])
+
+            logger.info("Running in Docker. Using environment variables for configuration.")
+
+        else:
+            logger.warning('config.json not found!')
+            with open('config.json', 'w') as f:
+                json.dump(DEFAULT_CFG, f, indent=4)
+                logger.info('Created default config file. Review and edit settings as required. Exiting...')
+                sys.exit(1)
     else:
         with open('config.json', 'r') as f:
             temp_cfg = json.load(f)
             cfg = {}
 
+        logger.info('Loaded config file.')
         cfg_update_required = False
 
         for key in DEFAULT_CFG.keys():
@@ -754,9 +785,17 @@ def main():
         sys.exit(1)
 
     if cfg['fallback_to_current_dir']:
-        logger.info("Fallback to current directory is enabled.")
-        logger.info(
+        if DOCKER:
+            logger.warning("Fallback to current directory is not available when running in Docker. Disabling.")
+            cfg['fallback_to_current_dir'] = False
+        else:
+            logger.info("Fallback to current directory is enabled.")
+            logger.info(
             "If save directory is offline or unreachable, recordings will be saved to current directory instead.")
+
+    if cfg['mount_command'] and DOCKER:
+        logger.warning("Mount command is not available when running in Docker.")
+        cfg['mount_command'] = ''
 
     recorder = MultiChzzkRecorder(cfg)
     atexit.register(recorder.cleanup)
