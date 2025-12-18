@@ -45,6 +45,11 @@ class DiscordBot(commands.Bot):
                 data = self.socket.recv_json(flags=zmq.NOBLOCK)
 
                 if data['type'] == 'alive':
+                    if no_data_sent:
+                        await self.send_message(ds.Embed(
+                            title='레코더 응답 중',
+                            description='레코더와의 연결이 재개되었습니다.')
+                        )
                     no_data_counter = 0
                     no_data_sent = False
                     continue
